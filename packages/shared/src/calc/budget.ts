@@ -61,7 +61,8 @@ export function computeCostPosition(input: CostPositionInput, warnPct: DecInput 
   const cvPct = ratio(cv, bac);
   let alert: CostPosition['alert'] = 'OK';
   if (eac.gt(bac) || remaining.isNeg()) alert = 'CRITICAL';
-  else if (!bac.isZero() && eac.gte(bac.times(D(warnPct)))) alert = 'WARNING';
+  // Warning = budget consumption threshold (incurred + committed), independent of forecast method.
+  else if (!bac.isZero() && incurred.plus(commitments).gte(bac.times(D(warnPct)))) alert = 'WARNING';
   return {
     originalBudget: money(ob),
     approvedBudget: money(bac),

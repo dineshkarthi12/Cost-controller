@@ -101,7 +101,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     code: 'PROJECT_MANAGER',
     name: 'Project Manager',
     description: 'Runs the project and approves within limits',
-    permissions: [...allView(), ...approve(...AREAS), ...manage('project', 'team', 'task', 'progress', 'variation', 'risk', 'document', 'rfi', 'diary'), 'report.export'],
+    permissions: [...allView(), ...approve(...AREAS), ...manage('project', 'team', 'task', 'progress', 'variation', 'risk', 'document', 'rfi', 'diary', 'contract'), 'report.export'],
   },
   {
     code: 'COST_CONTROL_LEAD',
@@ -110,7 +110,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     permissions: [
       ...allView(),
       ...manage('budget', 'forecast', 'costcode', 'boq', 'expense', 'cashflow', 'period', 'closeout', 'task', 'team', 'risk', 'variation', 'report'),
-      ...approve('budget', 'forecast', 'expense', 'measurement', 'subbill', 'clientbill', 'period', 'procurement', 'payable'),
+      ...approve('budget', 'forecast', 'expense', 'measurement', 'subbill', 'clientbill', 'period', 'procurement', 'payable', 'subcontract', 'variation'),
       'report.export',
       'import.manage',
       'audit.view',
@@ -135,7 +135,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     permissions: [
       ...view('project', 'task', 'manpower', 'diary', 'progress', 'boq', 'measurement', 'evidence', 'material', 'procurement', 'receiving', 'stock', 'equipment', 'quality', 'safety', 'document', 'rfi', 'costcode', 'report'),
       ...manage('manpower', 'diary', 'progress', 'measurement', 'evidence', 'procurement', 'equipment', 'quality', 'safety', 'rfi', 'task'),
-      ...approve('measurement', 'evidence', 'manpower'),
+      ...approve('measurement', 'evidence', 'manpower', 'receiving', 'stock', 'equipment'),
     ],
   },
   {

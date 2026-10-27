@@ -59,7 +59,7 @@ Each project cost event writes one or more `CostLedgerEntry` rows `(project, cos
 | Contingency | Σ `BudgetLine.contingencyAmount` | Part of BAC, shown separately |
 
 ### Overrun alerts
-- **Warning:** EAC ≥ 95% of BAC (configurable `settings.alertWarnPct`).
+- **Warning:** cost incurred + open commitments ≥ 95% of BAC (budget consumption; configurable `settings.alertWarnPct`).
 - **Critical:** EAC > BAC, or Remaining Budget < 0.
 
 ### Earned value (project level, when activities have baselines and weights)
@@ -126,7 +126,7 @@ netPayable          = currentWorkValue + tax − retention − advanceRecovery �
 - Controlled documents change status **only** via the workflow engine.
 - A user may not approve a request they submitted unless the workflow definition sets `allowSelfApproval`.
 - A step applies only if the document amount is within the step's `[minAmount, maxAmount]`.
-- An approver's `approvalLimit` (project membership, falling back to user) must be ≥ the document amount for financial document types.
+- An approver's `approvalLimit` (project membership, falling back to user; blank = no limit) must be ≥ the document amount for financial document types. The limit is checked for the approver who completes the **final** step (final authorisation). Earlier steps are recommendations.
 - Delegations are honoured only within their date range, and only if the delegate holds the approve permission for the module.
 - Completing a task **never** approves the linked document.
 
