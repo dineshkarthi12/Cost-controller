@@ -20,7 +20,9 @@ import { createApp } from '../src/app.js';
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The development default must never reach a production database.
 if ((process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') && !process.env.SEED_PASSWORD) throw new Error('Set SEED_PASSWORD (min. 12 characters) to seed in production');
-const PASSWORD = process.env.SEED_PASSWORD || 'Toprock@2025!';
+// Trim: values pasted into hosting dashboards often carry a trailing space or newline.
+const PASSWORD = process.env.SEED_PASSWORD?.trim() || 'Toprock@2025!';
+if (process.env.SEED_PASSWORD && process.env.SEED_PASSWORD !== PASSWORD) console.warn('⚠ SEED_PASSWORD had leading/trailing spaces; they were removed.');
 if (PASSWORD.length < 12) throw new Error('SEED_PASSWORD must be at least 12 characters');
 const DEMO = process.env.SEED_DEMO !== 'false';
 const DOMAIN = 'toprock.example';
@@ -116,14 +118,14 @@ async function main() {
   }
   // Recovery: RESET_ADMIN_PASSWORD=true sets the administrators' password to SEED_PASSWORD, unlocks
   // them and signs them out everywhere. Remove the variable after use.
-  if (process.env.RESET_ADMIN_PASSWORD === 'true') {
+  if (/^(true|1|yes)$/i.test(process.env.RESET_ADMIN_PASSWORD?.trim() ?? '')) {
     const emails = [admin.email, ...(ownEmail ? [ownEmail] : [])];
     const hash = await hashPassword(PASSWORD);
     for (const email of emails) {
       const u = await prisma.user.update({ where: { email }, data: { passwordHash: hash, failedLogins: 0, lockedUntil: null, status: 'ACTIVE', passwordChangedAt: new Date() } });
       await prisma.session.updateMany({ where: { userId: u.id, revokedAt: null }, data: { revokedAt: new Date() } });
       await prisma.auditEvent.create({ data: { orgId: org.id, actorId: null, action: 'ADMIN_PASSWORD_RESET', entityType: 'user', entityId: u.id, summary: `${email}: password reset and account unlocked by deployment setting RESET_ADMIN_PASSWORD` } });
-      console.log(`✔ Password reset and account unlocked: ${email}`);
+      console.log(`✔ Password reset and account unlocked: ${email} (password length ${PASSWORD.length})`);
     }
   }
   if (!DEMO) return;
