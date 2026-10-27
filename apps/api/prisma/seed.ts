@@ -81,13 +81,14 @@ async function approve(entityId: string, approvers: string[], comment = 'Approve
   }
 }
 
-async function createUser(orgId: string, u: { key: string; name: string; designation: string; department: string; roles: string[]; employeeId: string; approvalLimit?: string | null; skills?: string[]; responsibilities?: string }) {
+async function createUser(orgId: string, u: { key: string; email?: string; name: string; designation: string; department: string; roles: string[]; employeeId: string; approvalLimit?: string | null; skills?: string[]; responsibilities?: string }) {
   const roles = await prisma.role.findMany({ where: { orgId, code: { in: u.roles } } });
+  const email = u.email ?? `${u.key}@${DOMAIN}`;
   return prisma.user.upsert({
-    where: { email: `${u.key}@${DOMAIN}` },
+    where: { email },
     create: {
       orgId,
-      email: `${u.key}@${DOMAIN}`,
+      email,
       name: u.name,
       designation: u.designation,
       department: u.department,
@@ -106,6 +107,13 @@ async function main() {
   const org = await bootstrapOrganisation(prisma, { code: 'TOPROCK', name: 'TOPROCK GLOBAL', isDemo: DEMO });
   const admin = await createUser(org.id, { key: 'admin', name: 'System Administrator', designation: 'Administrator', department: 'IT', roles: ['SUPER_ADMIN'], employeeId: 'TRG-0001' });
   console.log(`✔ Reference data ready (org ${org.code}). Admin: ${admin.email}`);
+  // Optional: your own administrator login (same password). Existing users are never modified.
+  const ownEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  if (ownEmail && ownEmail !== admin.email) {
+    if (!/^\S+@\S+\.\S+$/.test(ownEmail)) throw new Error('ADMIN_EMAIL is not a valid email address');
+    const own = await createUser(org.id, { key: 'owner', email: ownEmail, name: process.env.ADMIN_NAME?.trim() || 'Administrator', designation: 'Administrator', department: 'Management', roles: ['SUPER_ADMIN'], employeeId: 'TRG-0000' });
+    console.log(`✔ Administrator: ${own.email}`);
+  }
   if (!DEMO) return;
   if (await prisma.project.count({ where: { orgId: org.id } })) {
     console.log('Demo data already present — skipping. Run `npm run db:reset` to rebuild.');

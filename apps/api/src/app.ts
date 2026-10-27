@@ -9,7 +9,7 @@ import { config } from './config.js';
 import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { requireAuth, requireCsrfHeader, ctxOf } from './middleware/auth.js';
-import { errorHandler } from './middleware/errors.js';
+import { databaseProblem, errorHandler } from './middleware/errors.js';
 import { registerAllHandlers } from './services/handlers/index.js';
 import { authRouter } from './routes/auth.js';
 import { projectsRouter } from './routes/projects.js';
@@ -48,8 +48,15 @@ export function createApp() {
   app.use('/api', rateLimit({ windowMs: 60_000, limit: config.relaxedLimits ? 100_000 : 600, standardHeaders: 'draft-7', legacyHeaders: false }));
 
   app.get('/api/health', async (_req, res) => {
-    await prisma.$queryRaw`SELECT 1`;
-    res.json({ status: 'ok', time: new Date().toISOString() });
+    try {
+      await prisma.$queryRaw`SELECT 1`;
+      // Also confirms migrations ran and at least one user exists (yes/no only; nothing sensitive).
+      const hasUsers = (await prisma.user.count()) > 0;
+      res.json({ status: 'ok', time: new Date().toISOString(), database: 'connected', setup: hasUsers ? 'complete' : 'no users yet: set SEED_PASSWORD and redeploy', storage: config.storageDriver });
+    } catch (err) {
+      const problem = databaseProblem(err) ?? { code: 'ERROR', message: 'Health check failed' };
+      res.status(503).json({ status: 'error', ...problem, storage: config.storageDriver });
+    }
   });
 
   // Scheduled jobs for serverless hosts (Vercel Cron sends "Authorization: Bearer $CRON_SECRET").

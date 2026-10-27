@@ -12,6 +12,12 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   if (err instanceof MulterError) {
     return res.status(400).json({ error: { code: 'UPLOAD_ERROR', message: err.code === 'LIMIT_FILE_SIZE' ? 'File is too large' : err.message } });
   }
+  // Deployment/configuration problems: say what to fix (no connection details are revealed).
+  const db = databaseProblem(err);
+  if (db) {
+    logger.error({ err, path: req.path }, 'database unavailable');
+    return res.status(503).json({ error: db });
+  }
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === 'P2002') {
       const target = (err.meta?.target as string[] | undefined)?.join(', ');
@@ -25,4 +31,15 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
   }
   logger.error({ err, path: req.path, method: req.method }, 'unhandled error');
   res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong. The error has been logged.' } });
+}
+
+/** Recognises "database not connected" and "tables not created" so the UI can show the fix. */
+export function databaseProblem(err: unknown): { code: string; message: string } | null {
+  if (err instanceof Prisma.PrismaClientInitializationError || (err instanceof Error && /Environment variable not found: DATABASE_URL|Can't reach database server|P1001|P1000|P1003/.test(err.message))) {
+    return { code: 'DATABASE_UNAVAILABLE', message: 'The server cannot connect to its database. In Vercel: Storage → connect a Postgres (Neon) database to this project, then redeploy.' };
+  }
+  if (err instanceof Prisma.PrismaClientKnownRequestError && (err.code === 'P2021' || err.code === 'P2022')) {
+    return { code: 'DATABASE_NOT_MIGRATED', message: 'The database has not been set up yet. Redeploy the project (Deployments → ⋯ → Redeploy) so the tables are created.' };
+  }
+  return null;
 }

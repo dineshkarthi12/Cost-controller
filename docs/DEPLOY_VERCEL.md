@@ -24,6 +24,8 @@ Project → **Settings → Environment Variables**:
 | Name | Value | Why |
 |---|---|---|
 | `SEED_PASSWORD` | A strong password, 12+ characters | Password for `admin@toprock.example` (and the demo users, if enabled) |
+| `ADMIN_EMAIL` | Your own email (optional) | Creates an extra administrator with this email and the `SEED_PASSWORD` password |
+| `ADMIN_NAME` | Your name (optional) | Display name for that administrator |
 | `SEED_DEMO` | `true` for a demo site, otherwise leave unset | Creates the clearly-flagged demo projects and users |
 | `CRON_SECRET` | Any long random string | Protects the daily scheduled-jobs endpoint |
 | `APP_BASE_URL` | `https://<your-project>.vercel.app` | Used in invitation and password-reset links |
@@ -37,6 +39,19 @@ Project → **Settings → Environment Variables**:
 Then open the site and sign in as **admin@toprock.example** with your `SEED_PASSWORD`. Change the password under *My account* and turn on MFA.
 
 Later deployments re-run migrations (only new ones) and the seed. The seed never overwrites existing data, so redeploying is safe.
+
+## Troubleshooting sign-in
+
+Open `https://<your-project>.vercel.app/api/health` in the browser:
+
+| It shows | Meaning | Fix |
+|---|---|---|
+| `DATABASE_UNAVAILABLE` | No database connected, or the connection failed | Storage → connect a Neon Postgres database → Redeploy |
+| `DATABASE_NOT_MIGRATED` | Database connected after the last build, so tables were never created | Deployments → ⋯ → Redeploy |
+| `"setup":"no users yet…"` | `SEED_PASSWORD` was missing at build time | Add `SEED_PASSWORD` (and optionally `ADMIN_EMAIL`) → Redeploy |
+| `"status":"ok"` with `"setup":"complete"` | Ready | Sign in with `admin@toprock.example` (or your `ADMIN_EMAIL`) and `SEED_PASSWORD` |
+
+The sign-in page shows the same messages. "Invalid email or password" means the server works; check the email and password.
 
 ## What runs differently on Vercel
 
