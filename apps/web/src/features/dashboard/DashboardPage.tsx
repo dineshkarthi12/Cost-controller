@@ -59,14 +59,23 @@ function greeting() {
 
 export function DashboardPage() {
   const projectId = useProjectId();
-  const { me, project } = useAuth();
+  const { me, project, can } = useAuth();
   const navigate = useNavigate();
   const [range, setRange] = useState({ from: '', to: '' });
   const dash = useQuery({ queryKey: ['p', 'dashboard', projectId, range], queryFn: () => api.get<Dashboard>(`/projects/${projectId}/dashboard`, range), enabled: !!projectId });
   const ops = useQuery({ queryKey: ['p', 'dashboard-ops', projectId], queryFn: () => api.get<Ops>(`/projects/${projectId}/dashboard/operations`), enabled: !!projectId });
   const inbox = useQuery({ queryKey: ['approvals', 'inbox', projectId], queryFn: () => api.get<InboxItem[]>('/approvals/inbox', { projectId }), enabled: !!projectId });
 
-  if (!projectId) return <Page><EmptyState title="No project access yet" description="Ask an administrator to add you to a project." /></Page>;
+  if (!projectId)
+    return (
+      <Page>
+        {can('project.manage') ? (
+          <EmptyState title="No projects yet" description="Create the first project, then add its team, cost codes and budget." action={<Link to="/projects" className="inline-flex items-center gap-1 rounded-lg bg-navy-800 px-4 py-2 text-sm font-medium text-white">Go to projects <ArrowRight className="h-4 w-4" /></Link>} />
+        ) : (
+          <EmptyState title="No project access yet" description="Ask an administrator to add you to a project." />
+        )}
+      </Page>
+    );
   if (dash.error) return <Page><ErrorState error={dash.error} onRetry={() => dash.refetch()} /></Page>;
   const d = dash.data;
   const k = d?.kpis;

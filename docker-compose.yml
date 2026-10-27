@@ -1,0 +1,46 @@
+# Local / single-server deployment: PostgreSQL + API + web (nginx).
+# Usage:  POSTGRES_PASSWORD=change-me docker compose up -d --build
+# Optional demo data (clearly flagged DEMO):  docker compose exec api npm run db:seed
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: toprock
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+      POSTGRES_DB: toprock
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U toprock -d toprock"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    restart: unless-stopped
+
+  api:
+    build: { context: ., dockerfile: apps/api/Dockerfile }
+    init: true
+    environment:
+      DATABASE_URL: postgresql://toprock:${POSTGRES_PASSWORD}@db:5432/toprock
+      NODE_ENV: production
+      CORS_ORIGINS: ${APP_BASE_URL:-http://localhost:8080}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:8080}
+      # Secure cookies require HTTPS. Set to true behind a TLS-terminating proxy.
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      SEED_PASSWORD: ${SEED_PASSWORD:-}
+    volumes:
+      - files:/data/storage
+    depends_on:
+      db: { condition: service_healthy }
+    restart: unless-stopped
+
+  web:
+    build: { context: ., dockerfile: apps/web/Dockerfile }
+    ports:
+      - "${WEB_PORT:-8080}:80"
+    depends_on: [api]
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  files:

@@ -17,7 +17,10 @@ import { bootstrapOrganisation } from '../src/services/bootstrap.js';
 import { createApp } from '../src/app.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const PASSWORD = process.env.SEED_PASSWORD ?? 'Toprock@2025!';
+// The development default must never reach a production database.
+if (process.env.NODE_ENV === 'production' && !process.env.SEED_PASSWORD) throw new Error('Set SEED_PASSWORD (min. 12 characters) to seed in production');
+const PASSWORD = process.env.SEED_PASSWORD || 'Toprock@2025!';
+if (PASSWORD.length < 12) throw new Error('SEED_PASSWORD must be at least 12 characters');
 const DEMO = process.env.SEED_DEMO !== 'false';
 const DOMAIN = 'toprock.example';
 

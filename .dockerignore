@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/storage
+**/storage-test
+**/storage-e2e
+.git
+.env
+.env.*
+!.env.example
+test-results
+playwright-report
+coverage
