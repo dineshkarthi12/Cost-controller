@@ -47,6 +47,10 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Responsive and mobile | Bottom navigation and capture entry are present, with no horizontal overflow on the dashboard, evidence, MR list or manpower pages at Pixel 7 size (`mobile.spec.ts`) |
 | Forms | Successful save navigates without a false "unsaved changes" prompt. Required-reason dialogs block empty reasons. (`journey.spec.ts`, `components.test.tsx`) |
 | Email | Real SMTP delivery to a local test server: admin test email, invitation with one-time link, approval-pending alert to the approver, password reset (unknown accounts get the same response and no email), nothing sent when the transaction rolls back, invite link shown when email is not set up (`email.test.ts`) |
+| Client billing and receivables | The client bill is computed on the server from certified quantities (work value, 5 % retention on this bill's work value, 18 % tax, net). One open bill at a time. Client certification only after internal approval and never above the claim. AR aging buckets by days past due, with retention receivable. Receipts move the bill to partly paid and then paid; over-allocation, OUT payments against client bills and self-approval are refused. Client billing posts nothing to the cost ledger (`commercial.test.ts`) |
+| Variations → budget | A submitted variation shows as exposure, not budget. Approval sets the approved value and drafts a budget revision for the cost impact; BAC changes only when that revision is approved. The approved value is billed to the client on the next bill (`commercial.test.ts`) |
+| PO amendment and short-close | Amendments cannot remove lines, only one can be in progress, and nothing posts until approval. Approval changes the commitment by the change in open value (70 → 120 bags open = +₹20,000). Short-close needs procurement approval rights and a reason, releases the remaining commitment, keeps the accrual for goods received, and blocks later amendments (`commercial.test.ts`) |
+| Payments | Unapproved invoices cannot be paid. Partial then full payment sets partly paid and paid. Over-allocation and allocation to another supplier's invoice are refused. Payments do not change the cost ledger (`commercial.test.ts`) |
 | Schedule | CPM unit tests: FS/SS/FF/SF with lag, float, critical path, progress from the data date, loop detection. API: dependencies refuse loops, duplicates, self-links and other projects; read-only roles cannot edit; forecast dates, float and slip after a delay. Import: MS Project XML and Primavera XER fixtures parsed (summary/WBS rows skipped, link types and lags converted), preview writes nothing, commit creates and updates by code, a loop in the file is refused (`schedule.test.ts`, `schedule-import.test.ts`) |
 | Quality checklists (ITP) | Templates are organisation-wide and read-only roles cannot create them. A template is applied to an inspection; inactive and other organisations' templates are refused. Later checks wait for an unreleased hold point, and a site engineer cannot release one (quality approver only). A failed check needs remarks, fails the inspection, and the result cannot be overridden to PASS. Closing with open checks is refused. One NCR per failed check, pre-filled from the check. A template in use cannot be deleted (`quality.test.ts`, `checklist.test.ts`) |
 | Scheduled jobs | The cron endpoint runs only with the exact `CRON_SECRET` bearer token, and wrong or missing tokens get 404 (`auth.test.ts`) |
@@ -58,7 +62,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Suite | Result |
 |---|---|
 | `@toprock/shared` unit | **34 / 34 passed** (3 files) |
-| `@toprock/api` integration | **76 / 76 passed** (11 files) |
+| `@toprock/api` integration | **89 / 89 passed** (12 files) |
 | `@toprock/web` components | **11 / 11 passed** (3 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |
@@ -77,7 +81,7 @@ Defects found by these tests and fixed during this phase:
 These have **not** been verified by an automated test:
 
 - **MFA (TOTP)** enrol, verify and disable flows, and completing a password reset or invitation acceptance (the emails themselves are tested).
-- **Client billing**, receipts, retention release, credit notes, variations → budget revision, claims, PO amendment and short-close, RFQ comparison and award, equipment log costing, MPR own-labour costing. All of these run during the demo seed through the real API, but no assertions check their numbers.
+- **Retention release** payments, credit/debit notes, client bill disputes, claims, RFQ comparison and award, equipment log costing and MPR own-labour costing. All of these run during the demo seed through the real API, but no assertions check their numbers.
 - **Offline mode**: draft persistence and the IndexedDB photo queue are untested in automation.
 - **File uploads**: magic-byte rejection, size limits and evidence geotag handling have no dedicated tests.
 - **Escalation and recurring-task jobs** (time-based) are untested.
@@ -89,10 +93,8 @@ These have **not** been verified by an automated test:
 
 ## 6. Recommended next tests
 
-1. Client bill → client certification → receipt → AR aging, asserting amounts.
-2. Variation approval creating a budget revision, and the BAC change.
-3. PO amendment and short-close commitment deltas.
-4. File upload rejection (spoofed extension, oversize) and evidence access across projects.
-5. MFA enrolment, then a login challenge.
-6. Axe accessibility scan on the top 20 pages.
-7. A k6 load test on dashboard, budget and ledger endpoints with a realistic data volume.
+1. Retention release, credit notes and RFQ award, asserting amounts.
+2. File upload rejection (spoofed extension, oversize) and evidence access across projects.
+3. MFA enrolment, then a login challenge.
+4. Axe accessibility scan on the top 20 pages.
+5. A k6 load test on dashboard, budget and ledger endpoints with a realistic data volume.

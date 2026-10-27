@@ -39,7 +39,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 19 | Material Requisition | Working · tested | MR with workflow and its own `requisition` permission | — |
 | 20 | Purchase Requisition | Working | PR from MR, budget check (warn/block setting), workflow | — |
 | 21 | RFQ & Quotations | Working | RFQ from PR, quotations, comparison, award to PO | No automated tests |
-| 22 | Purchase Orders | Working · tested | PO from PR or award, workflow, PDF, amendments (workflow), short-close, reconciliation | Amendment/short-close not covered by tests |
+| 22 | Purchase Orders | Working · tested | PO from PR or award, workflow, PDF, amendments (workflow), short-close, reconciliation | — |
 | 23 | Goods Receipt | Working · tested | GRN against PO lines, over-receipt control, accrual posting, stock receipt | — |
 | 24 | Material Inspection | Working | MIR with workflow updating GRN inspection status | — |
 | 25 | Material Issue & Consumption | Working · tested | Issue, return, transfer, wastage and damage with workflow, WAC valuation, insufficient-stock guard | — |
@@ -48,13 +48,13 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 28 | Budget Control | Working · tested | Original budget, baseline lock, revisions and transfers (workflow), cost-code positions, cost ledger drill-down | — |
 | 29 | Cost Forecasting | Working | Manual or remaining-budget ETC per cost code and period, history | No statistical forecasting |
 | 30 | Cash Flow | Working | Planned vs actual in/out, cumulative, plan register | — |
-| 31 | Accounts Payable & Payments | Working · tested (invoices) | Supplier invoices with three-way match, duplicate guard, aging, payments with allocations (invoices, bills, expenses, retention release) | Payments not covered by tests |
+| 31 | Accounts Payable & Payments | Working · tested | Supplier invoices with three-way match, duplicate guard, aging, payments with allocations (invoices, bills, expenses, retention release) | Retention-release payments not covered by tests |
 | 32 | Month-End Closing | Working · tested | Checklist with live counts, waive with note, sign-off workflow, posting lock, audited reopen | — |
 | 33 | Subcontractor Management | Working · tested (commitment) | Subcontracts with items, compliance and insurance expiry, reconciliation | — |
 | 34 | Subcontractor Billing | Working · tested | RA bills from certified quantities, retention, advance recovery, tax, certification workflow, PDF, payments | — |
-| 35 | Client Billing & Receivables | Working | IPC from certified quantities, client certification, disputes, receipts, AR aging, milestones, credit/debit notes | **Not covered by automated tests** |
+| 35 | Client Billing & Receivables | Working · tested | IPC from certified quantities, client certification, disputes, receipts, AR aging, milestones, credit/debit notes | Credit/debit notes and disputes not covered by tests |
 | 36 | Contract Administration | Working · tested (clauses) | Contracts, key terms, source clauses with unofficial interpretation and validation (kept across unrelated edits), guarantees and insurance | No automatic obligation extraction (deliberately) |
-| 37 | Change Orders & Variations | Working | Variations with workflow; approved cost impact creates a budget revision (setting) | Not covered by tests |
+| 37 | Change Orders & Variations | Working · tested | Variations with workflow; approved cost impact creates a budget revision (setting) | — |
 | 38 | Risks & Claims | Working | Risk register (score, exposure), claims and EOT | — |
 | 39 | Quality & Rework | Working · tested | Inspections, ITP / checklist templates (hold, witness and review points with acceptance criteria and references), template applied to an inspection, per-item pass / fail / N/A with remarks, hold points released only by quality approvers before later checks, overall result driven by the checklist, NCR raised from a failed check (pre-filled), NCR with root cause, corrective action and estimated rework cost | Actual rework cost is entered as an expense. Checklist photos are attached to the inspection, not to individual checks |
 | 40 | Safety & Inspections | Working | Incidents and observations, toolbox talks | No permit-to-work |
@@ -89,6 +89,6 @@ Many registers use the shared **resource framework**: field metadata in `package
 
 1. When no project has been chosen yet, the current project defaults to the user's first project in alphabetical order, and the choice is remembered once the user switches.
 2. A new RA bill does not include quantities from an earlier bill that is still in approval; prepare bills one at a time.
-3. Client billing, variations → budget, PO amendments, payments and MFA run correctly in the seeded demo but lack automated assertions (`TEST_PLAN.md` §5).
+3. Retention release, credit notes, claims and MFA run correctly in the seeded demo but lack automated assertions (`TEST_PLAN.md` §5).
 4. No security penetration test, accessibility audit or load test has been performed. No compliance certification is claimed.
 5. TOPROCK confirmed A1 (GST excluded from cost), A6 (retention on each bill's work value), A12 (Gmail first, company mail later) and that no accounting integration is needed now. The other assumptions in `PROJECT_PLAN.md` §4 keep their defaults.
