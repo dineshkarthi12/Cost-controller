@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { MulterError } from 'multer';
 import { AppError } from '../lib/errors.js';
 import { logger } from '../lib/logger.js';
+import { databaseSource } from '../lib/dbUrl.js';
 
 /** Standard error envelope: { error: { code, message, details? } }. Never leaks internals. */
 export function errorHandler(err: unknown, req: Request, res: Response, _next: NextFunction) {
@@ -35,8 +36,13 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
 
 /** Recognises "database not connected" and "tables not created" so the UI can show the fix. */
 export function databaseProblem(err: unknown): { code: string; message: string } | null {
-  if (err instanceof Prisma.PrismaClientInitializationError || (err instanceof Error && /Environment variable not found: DATABASE_URL|Can't reach database server|P1001|P1000|P1003/.test(err.message))) {
-    return { code: 'DATABASE_UNAVAILABLE', message: 'The server cannot connect to its database. In Vercel: Storage → connect a Postgres (Neon) database to this project, then redeploy.' };
+  if (!databaseSource) {
+    return { code: 'DATABASE_NOT_CONFIGURED', message: 'No database is connected to this deployment. In Vercel: Storage → create or connect a Neon Postgres database with "Production" ticked, then Deployments → Redeploy.' };
+  }
+  if (err instanceof Prisma.PrismaClientInitializationError || (err instanceof Error && /Can't reach database server|P1001|P1000|P1003|P1017/.test(err.message))) {
+    const code = (err as { errorCode?: string }).errorCode ?? (err as Error).message.match(/P10\d\d/)?.[0] ?? 'unknown';
+    const hint = code === 'P1000' ? 'the database user or password was rejected' : code === 'P1003' ? 'the database name does not exist' : 'the database server did not respond (it may be paused or still waking up)';
+    return { code: 'DATABASE_UNAVAILABLE', message: `A database is configured (${databaseSource}) but the server cannot connect: ${hint}${code === 'unknown' ? '' : ` [${code}]`}. Open Vercel → Storage → your database and check it is active, then try again in a minute.` };
   }
   if (err instanceof Prisma.PrismaClientKnownRequestError && (err.code === 'P2021' || err.code === 'P2022')) {
     return { code: 'DATABASE_NOT_MIGRATED', message: 'The database has not been set up yet. Redeploy the project (Deployments → ⋯ → Redeploy) so the tables are created.' };

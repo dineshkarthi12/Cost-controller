@@ -12,7 +12,7 @@ The repository deploys to Vercel as **one project**. The web app is served as st
 
 ### 2. Add a database (Postgres)
 1. Project → **Storage** → **Create Database** → **Neon (Serverless Postgres)** → create, then **Connect** it to this project for all environments.
-2. This adds `DATABASE_URL`, `DATABASE_URL_UNPOOLED` and related variables automatically. The build uses the unpooled one for migrations, and the app uses the pooled one at runtime.
+2. This adds `DATABASE_URL`, `DATABASE_URL_UNPOOLED` and related variables automatically. Vercel Postgres and Supabase names (`POSTGRES_PRISMA_URL`, `POSTGRES_URL`, `POSTGRES_URL_NON_POOLING`) and custom prefixes (e.g. `STORAGE_DATABASE_URL`) are recognised too. The build uses the unpooled one for migrations, and the app uses the pooled one at runtime.
 
 ### 3. Add file storage (photos, attachments, drawings)
 1. Project → **Storage** → **Create** → **Blob**. Choose access **Private**, then **Connect** it to this project.
@@ -46,7 +46,8 @@ Open `https://<your-project>.vercel.app/api/health` in the browser:
 
 | It shows | Meaning | Fix |
 |---|---|---|
-| `DATABASE_UNAVAILABLE` | No database connected, or the connection failed | Storage → connect a Neon Postgres database → Redeploy |
+| `DATABASE_NOT_CONFIGURED` | No database variable reached this deployment | Storage → connect a Neon Postgres database with **Production** ticked → Redeploy |
+| `DATABASE_UNAVAILABLE` | A database is configured (the variable name is shown) but cannot be reached | Check the database is active in Storage; wait a minute (Neon wakes up from sleep) and retry |
 | `DATABASE_NOT_MIGRATED` | Database connected after the last build, so tables were never created | Deployments → ⋯ → Redeploy |
 | `"setup":"no users yet…"` | `SEED_PASSWORD` was missing at build time | Add `SEED_PASSWORD` (and optionally `ADMIN_EMAIL`) → Redeploy |
 | `"status":"ok"` with `"setup":"complete"` | Ready | Sign in with `admin@toprock.example` (or your `ADMIN_EMAIL`) and `SEED_PASSWORD` |

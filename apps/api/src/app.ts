@@ -10,6 +10,7 @@ import { logger } from './lib/logger.js';
 import { prisma } from './lib/prisma.js';
 import { requireAuth, requireCsrfHeader, ctxOf } from './middleware/auth.js';
 import { databaseProblem, errorHandler } from './middleware/errors.js';
+import { databaseSource } from './lib/dbUrl.js';
 import { registerAllHandlers } from './services/handlers/index.js';
 import { authRouter } from './routes/auth.js';
 import { projectsRouter } from './routes/projects.js';
@@ -52,10 +53,10 @@ export function createApp() {
       await prisma.$queryRaw`SELECT 1`;
       // Also confirms migrations ran and at least one user exists (yes/no only; nothing sensitive).
       const hasUsers = (await prisma.user.count()) > 0;
-      res.json({ status: 'ok', time: new Date().toISOString(), database: 'connected', setup: hasUsers ? 'complete' : 'no users yet: set SEED_PASSWORD and redeploy', storage: config.storageDriver });
+      res.json({ status: 'ok', time: new Date().toISOString(), database: 'connected', databaseVariable: databaseSource, setup: hasUsers ? 'complete' : 'no users yet: set SEED_PASSWORD and redeploy', storage: config.storageDriver });
     } catch (err) {
       const problem = databaseProblem(err) ?? { code: 'ERROR', message: 'Health check failed' };
-      res.status(503).json({ status: 'error', ...problem, storage: config.storageDriver });
+      res.status(503).json({ status: 'error', ...problem, databaseVariable: databaseSource, storage: config.storageDriver });
     }
   });
 
