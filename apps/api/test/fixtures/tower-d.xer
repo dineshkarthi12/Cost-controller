@@ -1,0 +1,21 @@
+ERMHDR	21.12	2026-11-01	Project	admin	Planner	dbxDatabaseNoName	Project Management	INR
+%T	PROJECT
+%F	proj_id	proj_short_name
+%R	100	TWR-D
+%T	PROJWBS
+%F	wbs_id	proj_id	wbs_short_name	wbs_name
+%R	10	100	SUB	Substructure
+%T	TASK
+%F	task_id	proj_id	wbs_id	task_code	task_name	task_type	status_code	phys_complete_pct	target_start_date	target_end_date	act_start_date	act_end_date
+%R	1	100	10	A1000	Piling	TT_Task	TK_Complete	100	2026-11-02 08:00	2026-11-20 17:00	2026-11-02 08:00	2026-11-21 17:00
+%R	2	100	10	A1010	Pile caps	TT_Task	TK_Active	30	2026-11-23 08:00	2026-12-10 17:00	2026-11-24 08:00	
+%R	3	100	10	A1020	Plinth beams	TT_Task	TK_NotStart	0	2026-12-11 08:00	2026-12-24 17:00		
+%R	4	100	10	M1000	Substructure complete	TT_FinMile	TK_NotStart	0	2026-12-24 17:00	2026-12-24 17:00		
+%R	5	100	10	LOE1	Site management	TT_LOE	TK_Active	0	2026-11-02 08:00	2026-12-24 17:00	2026-11-02 08:00	
+%T	TASKPRED
+%F	task_pred_id	task_id	pred_task_id	pred_type	lag_hr_cnt
+%R	1	2	1	PR_FS	0
+%R	2	3	2	PR_SS	40
+%R	3	4	3	PR_FS	0
+%R	4	3	5	PR_SS	0
+%E

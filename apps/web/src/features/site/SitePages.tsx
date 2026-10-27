@@ -470,9 +470,107 @@ export function SchedulePage() {
   );
 }
 
-/** Placeholder until schedule import (task 2) lands. */
+interface SchedulePreview {
+  id: string;
+  summary: { format: string; projectName: string | null; activities: number; newActivities: number; updatedActivities: number; dependencies: number; warnings: string[] };
+  activities: Array<{ code: string; name: string; plannedStart: string | null; plannedFinish: string | null; actualStart: string | null; actualFinish: string | null; percentComplete: number; isMilestone: boolean; exists: boolean }>;
+}
+
+/** MS Project XML / Primavera XER import: upload → preview → import. */
 function ImportScheduleButton() {
-  return null;
+  const projectId = useProjectId();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [file, setFile] = useState<File | null>(null);
+  const [preview, setPreview] = useState<SchedulePreview | null>(null);
+  const [withProgress, setWithProgress] = useState(true);
+  const reset = () => {
+    setFile(null);
+    setPreview(null);
+    setWithProgress(true);
+  };
+  const doPreview = useMutation({
+    mutationFn: () => {
+      const f = new FormData();
+      f.append('file', file!);
+      return api.upload<SchedulePreview>(`/projects/${projectId}/schedule/import/preview`, f);
+    },
+    onSuccess: setPreview,
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const commit = useMutation({
+    mutationFn: () => api.post<{ created: number; updated: number; dependencies: number }>(`/projects/${projectId}/schedule/import/${preview!.id}/commit`, { includeProgress: withProgress }),
+    onSuccess: (r) => {
+      toast.success(`Schedule imported: ${r.created} new, ${r.updated} updated, ${r.dependencies} dependencies`);
+      setOpen(false);
+      reset();
+      void qc.invalidateQueries({ queryKey: ['p'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const s = preview?.summary;
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>Import schedule</Button>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}
+        size="xl"
+        title="Import schedule"
+        description="Microsoft Project: File → Save As → XML. Primavera P6: File → Export → XER. Activities are matched by code (MS Project WBS or P6 activity ID): existing ones are updated, new ones are created."
+        footer={
+          preview ? (
+            <>
+              <Button variant="ghost" onClick={reset}>Choose another file</Button>
+              <Button loading={commit.isPending} onClick={() => commit.mutate()}>Import {s!.activities} activities</Button>
+            </>
+          ) : (
+            <Button disabled={!file} loading={doPreview.isPending} onClick={() => doPreview.mutate()}>Upload & preview</Button>
+          )
+        }
+      >
+        {!preview ? (
+          <Field label="Schedule file (.xml or .xer)" required>
+            <Input type="file" accept=".xml,.xer,text/xml,application/xml" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </Field>
+        ) : (
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge tone="info">{s!.format === 'PRIMAVERA_XER' ? 'Primavera P6' : 'MS Project'}</Badge>
+              {s!.projectName && <strong>{s!.projectName}</strong>}
+              <Badge tone="success">{s!.newActivities} new</Badge>
+              <Badge tone="neutral">{s!.updatedActivities} update existing</Badge>
+              <Badge tone="neutral">{s!.dependencies} dependencies</Badge>
+            </div>
+            {s!.warnings.map((w) => <p key={w} className="rounded bg-amber-50 px-2 py-1 text-xs text-amber-900">{w}</p>)}
+            <label className="flex items-center gap-2 text-sm">
+              <input type="checkbox" className="h-4 w-4 accent-brand-600" checked={withProgress} onChange={(e) => setWithProgress(e.target.checked)} />
+              Also import progress (actual start/finish and % complete)
+            </label>
+            <div className="max-h-[45vh] overflow-auto rounded-lg border border-line">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-surface-50 text-left text-muted">
+                  <tr>{['Code', 'Activity', 'Planned', 'Actual', '%', ''].map((h) => <th key={h} className="px-2 py-1.5">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {preview.activities.map((a) => (
+                    <tr key={a.code} className="border-t border-line">
+                      <td className="px-2 py-1 font-medium whitespace-nowrap">{a.code}</td>
+                      <td className="max-w-[260px] truncate px-2 py-1">{a.isMilestone && <Flag className="mr-1 inline h-3 w-3" />}{a.name}</td>
+                      <td className="px-2 py-1 whitespace-nowrap">{formatDate(a.plannedStart)} – {formatDate(a.plannedFinish)}</td>
+                      <td className="px-2 py-1 whitespace-nowrap">{a.actualStart ? `${formatDate(a.actualStart)} – ${a.actualFinish ? formatDate(a.actualFinish) : '…'}` : '—'}</td>
+                      <td className="px-2 py-1 text-right">{a.percentComplete}</td>
+                      <td className="px-2 py-1">{a.exists ? <Badge tone="neutral">update</Badge> : <Badge tone="success">new</Badge>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </Dialog>
+    </>
+  );
 }
 
 /* ------------------------------------------------------------------ Equipment utilisation */

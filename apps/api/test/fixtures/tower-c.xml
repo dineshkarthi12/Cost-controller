@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<Project xmlns="http://schemas.microsoft.com/project">
+  <Name>Tower C.xml</Name>
+  <Title>Tower C</Title>
+  <Tasks>
+    <Task><UID>0</UID><ID>0</ID><Name>Tower C</Name><Summary>1</Summary><Start>2026-11-02T08:00:00</Start><Finish>2026-12-15T17:00:00</Finish></Task>
+    <Task><UID>1</UID><ID>1</ID><Name>Substructure</Name><WBS>1</WBS><OutlineLevel>1</OutlineLevel><Summary>1</Summary><Start>2026-11-02T08:00:00</Start><Finish>2026-12-15T17:00:00</Finish></Task>
+    <Task><UID>2</UID><ID>2</ID><Name>Excavation</Name><WBS>1.1</WBS><OutlineLevel>2</OutlineLevel><Summary>0</Summary><Milestone>0</Milestone><Start>2026-11-02T08:00:00</Start><Finish>2026-11-11T17:00:00</Finish><PercentComplete>100</PercentComplete><ActualStart>2026-11-02T08:00:00</ActualStart><ActualFinish>2026-11-11T17:00:00</ActualFinish></Task>
+    <Task><UID>3</UID><ID>3</ID><Name>Raft foundation</Name><WBS>1.2</WBS><OutlineLevel>2</OutlineLevel><Summary>0</Summary><Milestone>0</Milestone><Start>2026-11-12T08:00:00</Start><Finish>2026-11-30T17:00:00</Finish><PercentComplete>40</PercentComplete><ActualStart>2026-11-12T08:00:00</ActualStart>
+      <PredecessorLink><PredecessorUID>2</PredecessorUID><Type>1</Type><LinkLag>0</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+    </Task>
+    <Task><UID>4</UID><ID>4</ID><Name>Columns up to plinth</Name><WBS>1.3</WBS><OutlineLevel>2</OutlineLevel><Summary>0</Summary><Milestone>0</Milestone><Start>2026-11-17T08:00:00</Start><Finish>2026-12-10T17:00:00</Finish><PercentComplete>0</PercentComplete>
+      <PredecessorLink><PredecessorUID>3</PredecessorUID><Type>3</Type><LinkLag>14400</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+    </Task>
+    <Task><UID>5</UID><ID>5</ID><Name>Substructure complete</Name><WBS>1.4</WBS><OutlineLevel>2</OutlineLevel><Summary>0</Summary><Milestone>1</Milestone><Start>2026-12-15T17:00:00</Start><Finish>2026-12-15T17:00:00</Finish><PercentComplete>0</PercentComplete>
+      <PredecessorLink><PredecessorUID>3</PredecessorUID><Type>1</Type><LinkLag>0</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+      <PredecessorLink><PredecessorUID>4</PredecessorUID><Type>0</Type><LinkLag>0</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+      <PredecessorLink><PredecessorUID>1</PredecessorUID><Type>1</Type><LinkLag>0</LinkLag><LagFormat>7</LagFormat></PredecessorLink>
+    </Task>
+  </Tasks>
+</Project>
