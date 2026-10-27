@@ -2362,15 +2362,38 @@ model Risk {
 
 // ───────────────────────────── Quality & safety ─────────────────────────────
 
+/// Inspection and test plan (ITP) / checklist template, shared by all projects of the organisation.
 model ChecklistTemplate {
-  id        String   @id @default(cuid())
-  orgId     String
-  name      String
-  type      String   // WIR | ITP | QUALITY | SAFETY | MATERIAL
-  items     String[]
-  createdAt DateTime @default(now())
+  id          String   @id @default(cuid())
+  orgId       String
+  name        String
+  type        String   // WIR | ITP | QUALITY | SAFETY | MATERIAL | HANDOVER
+  description String?
+  active      Boolean  @default(true)
+  createdById String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @default(now()) @updatedAt
 
-  org Organisation @relation(fields: [orgId], references: [id])
+  org         Organisation            @relation(fields: [orgId], references: [id])
+  items       ChecklistTemplateItem[]
+  inspections Inspection[]
+
+  @@unique([orgId, name])
+}
+
+model ChecklistTemplateItem {
+  id                 String  @id @default(cuid())
+  templateId         String
+  lineNo             Int
+  stage              String? // e.g. Before concreting
+  description        String
+  acceptanceCriteria String?
+  reference          String? // drawing, specification or IS code clause
+  pointType          String  @default("REVIEW") // HOLD | WITNESS | REVIEW
+
+  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@index([templateId])
 }
 
 model Inspection {
@@ -2384,6 +2407,8 @@ model Inspection {
   requestedDate DateTime  @db.Date
   inspectedDate DateTime? @db.Date
   inspectorId   String?
+  templateId    String?
+  /// Items copied from the template, with per-item results. See services/inspectionChecklist.ts.
   checklist     Json      @default("[]")
   result        String    @default("PENDING") // PENDING | PASS | FAIL | CONDITIONAL
   remarks       String?
@@ -2396,6 +2421,7 @@ model Inspection {
 
   // generated foreign keys (scripts/add-relations.py)
   project Project @relation("Inspection_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  template ChecklistTemplate? @relation(fields: [templateId], references: [id], onDelete: Restrict)
   activity Activity? @relation("Inspection_activityId", fields: [activityId], references: [id], onDelete: Restrict)
   createdBy User @relation("Inspection_createdById", fields: [createdById], references: [id], onDelete: Restrict)
 }

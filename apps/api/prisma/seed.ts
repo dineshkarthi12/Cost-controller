@@ -685,6 +685,40 @@ async function main() {
   await Q.post(`${P}/r/inspections`, { type: 'QUALITY', title: 'Block masonry alignment L7', activityId: acts['A-400'].id, location: 'Tower A L7', requestedDate: d(-4), inspectedDate: d(-3), result: 'FAIL', remarks: 'Out of plumb > 5 mm in 3 locations', status: 'INSPECTED' });
   const ins = await prisma.inspection.findFirst({ where: { projectId: RH.id, result: 'FAIL' } });
   await Q.post(`${P}/r/ncrs`, { title: 'Masonry out of plumb — Tower A L7', severity: 'MAJOR', description: 'Masonry walls out of plumb beyond tolerance at 3 locations', activityId: acts['A-400'].id, inspectionId: ins!.id, contractorId: parties['SC-KMR'].id, rootCause: 'Inadequate line & level checks by gang', correctiveAction: 'Dismantle and rebuild affected panels', preventiveAction: 'Daily plumb checks by supervisor', responsibleId: users['karthik.s'].id, dueDate: d(5), estimatedReworkCost: '85000', costCodeId: cc['03-400'].id, status: 'IN_PROGRESS' });
+  // ITP templates (sample content for the demo; each company maintains its own)
+  const slabItp = await Q.post('/org/r/checklistTemplates', {
+    name: 'RCC slab / beam — concreting ITP',
+    type: 'ITP',
+    description: 'Sample inspection and test plan for a cast-in-situ slab pour (demo content)',
+    items: [
+      { stage: 'Before work', description: 'Approved for-construction drawings and BBS available at site', reference: 'Document register', pointType: 'REVIEW' },
+      { stage: 'Before work', description: 'Shuttering line, level and propping checked', acceptanceCriteria: 'Level ±5 mm; props at designed spacing', pointType: 'WITNESS' },
+      { stage: 'Before concreting', description: 'Reinforcement checked against drawing and BBS', acceptanceCriteria: 'Bar dia, spacing, laps and cover as per drawing', reference: 'IS 456 cl. 26', pointType: 'HOLD' },
+      { stage: 'Before concreting', description: 'Embedded MEP sleeves and conduits in position', pointType: 'WITNESS' },
+      { stage: 'During concreting', description: 'RMC delivery tickets checked (grade, time since batching)', acceptanceCriteria: 'Correct grade; within 90 minutes of batching', pointType: 'REVIEW' },
+      { stage: 'During concreting', description: 'Slump test at point of placing', acceptanceCriteria: '100 ± 25 mm or as per mix design', reference: 'IS 1199', pointType: 'WITNESS' },
+      { stage: 'During concreting', description: 'Cube samples taken', acceptanceCriteria: 'Sampling frequency per IS 456 cl. 15.2', pointType: 'REVIEW' },
+      { stage: 'After concreting', description: 'Curing started and maintained', acceptanceCriteria: 'Minimum 7 days moist curing', pointType: 'REVIEW' },
+    ],
+  });
+  await Q.post('/org/r/checklistTemplates', {
+    name: 'Block masonry ITP',
+    type: 'ITP',
+    description: 'Sample checklist for block masonry (demo content)',
+    items: [
+      { description: 'Block test certificates reviewed', reference: 'IS 2185', pointType: 'REVIEW' },
+      { description: 'Setting out of walls checked against drawing', pointType: 'HOLD' },
+      { description: 'Mortar mix proportion', acceptanceCriteria: '1:6 cement-sand unless specified', pointType: 'WITNESS' },
+      { description: 'Plumb and alignment', acceptanceCriteria: 'Within 5 mm per storey height', pointType: 'WITNESS' },
+      { description: 'Lintels and sill bands provided', pointType: 'REVIEW' },
+    ],
+  });
+  const itp = await Q.post(`${P}/r/inspections`, { type: 'ITP', title: 'Tower A L13 slab pour', activityId: acts['A-300'].id, location: 'Tower A L13', requestedDate: d(0) });
+  const applied = await Q.post(`${P}/inspections/${itp.id}/checklist/template`, { templateId: slabItp.id });
+  const chk = (applied.checklist as Array<{ id: string }>).slice(0, 3);
+  for (const [i, remarks] of ['FC drawings Rev C at site', 'Checked with auto level', 'Cover blocks 25 mm verified'].entries()) {
+    await Q.put(`${P}/inspections/${itp.id}/checklist/${chk[i].id}`, { result: 'PASS', remarks });
+  }
   for (const [type, desc, sev] of [
     ['INSPECTION', 'Weekly scaffolding inspection — Tower B façade', 'LOW'],
     ['NEAR_MISS', 'Unsecured shuttering plank fell from L10 (no injury)', 'HIGH'],

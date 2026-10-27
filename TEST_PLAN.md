@@ -19,7 +19,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 
 | Layer | Tool | Location | Scope |
 |---|---|---|---|
-| Calculation unit tests | Vitest | `packages/shared/test` | Decimal money, cost position, EAC/ETC, roll-ups, budget availability, RA bills, EVM, measurement formulae and variance, pricing, three-way match, GRN validation, weighted-average stock, labour cost, numbering tokens, resource schemas, role catalogue |
+| Calculation unit tests | Vitest | `packages/shared/test` | Critical path (CPM), inspection checklist rules, decimal money, cost position, EAC/ETC, roll-ups, budget availability, RA bills, EVM, measurement formulae and variance, pricing, three-way match, GRN validation, weighted-average stock, labour cost, numbering tokens, resource schemas, role catalogue |
 | API integration | Vitest + Supertest against real PostgreSQL | `apps/api/test` | Business flows through HTTP, with assertions on ledger totals, statuses, permissions and audit rows |
 | Web components | Vitest + React Testing Library (jsdom) | `apps/web/test` | Dialog, table and badge behaviour, login flow with mocked API, pure UI logic |
 | End-to-end | Playwright (Chromium) | `e2e/` | Real browser against the real API and database, desktop and mobile viewports |
@@ -47,6 +47,8 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Responsive and mobile | Bottom navigation and capture entry are present, with no horizontal overflow on the dashboard, evidence, MR list or manpower pages at Pixel 7 size (`mobile.spec.ts`) |
 | Forms | Successful save navigates without a false "unsaved changes" prompt. Required-reason dialogs block empty reasons. (`journey.spec.ts`, `components.test.tsx`) |
 | Email | Real SMTP delivery to a local test server: admin test email, invitation with one-time link, approval-pending alert to the approver, password reset (unknown accounts get the same response and no email), nothing sent when the transaction rolls back, invite link shown when email is not set up (`email.test.ts`) |
+| Schedule | CPM unit tests: FS/SS/FF/SF with lag, float, critical path, progress from the data date, loop detection. API: dependencies refuse loops, duplicates, self-links and other projects; read-only roles cannot edit; forecast dates, float and slip after a delay. Import: MS Project XML and Primavera XER fixtures parsed (summary/WBS rows skipped, link types and lags converted), preview writes nothing, commit creates and updates by code, a loop in the file is refused (`schedule.test.ts`, `schedule-import.test.ts`) |
+| Quality checklists (ITP) | Templates are organisation-wide and read-only roles cannot create them. A template is applied to an inspection; inactive and other organisations' templates are refused. Later checks wait for an unreleased hold point, and a site engineer cannot release one (quality approver only). A failed check needs remarks, fails the inspection, and the result cannot be overridden to PASS. Closing with open checks is refused. One NCR per failed check, pre-filled from the check. A template in use cannot be deleted (`quality.test.ts`, `checklist.test.ts`) |
 | Scheduled jobs | The cron endpoint runs only with the exact `CRON_SECRET` bearer token, and wrong or missing tokens get 404 (`auth.test.ts`) |
 | Vercel packaging | Checked by hand, not in CI: the build script ran under `VERCEL=1` against a fresh database, the function bundle was traced with `@vercel/nft`, and the handler was exercised in production mode (`docs/DEPLOY_VERCEL.md`). No real Vercel deployment was made. |
 | Containers | The API and web images were built and run with Docker. Migrations were applied, health was OK, admin login went through nginx, SPA deep links were served, and security headers were present. This was checked by hand, not in an automated suite. |
@@ -55,8 +57,8 @@ The API integration tests only accept a test database whose name ends in `_test`
 
 | Suite | Result |
 |---|---|
-| `@toprock/shared` unit | **25 / 25 passed** |
-| `@toprock/api` integration | **57 / 57 passed** (8 files) |
+| `@toprock/shared` unit | **34 / 34 passed** (3 files) |
+| `@toprock/api` integration | **76 / 76 passed** (11 files) |
 | `@toprock/web` components | **11 / 11 passed** (3 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |

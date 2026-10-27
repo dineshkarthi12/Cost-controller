@@ -1,10 +1,10 @@
 /* eslint-disable react-refresh/only-export-components */
 import { useState, type ReactNode } from 'react';
-import { useNavigate } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { AlertTriangle, CheckCircle2, ClipboardCheck, FileDown, FileUp, Handshake, PackageCheck, Receipt, Scale, ShieldCheck, ShoppingCart, Upload, Users, XCircle } from 'lucide-react';
-import { humanize, TASK_STATUS_LABEL } from '@toprock/shared';
+import { blockingHoldPoint, checklistSummary, humanize, TASK_STATUS_LABEL, type ChecklistItem, type ChecklistResult } from '@toprock/shared';
 import { api } from '../../lib/api';
 import { formatDate, formatDateTime, formatMoney, formatQty, todayIso } from '../../lib/format';
 import { Badge, Button, ConfirmDialog, DescriptionList, Dialog, Field, Input, StatusBadge, Textarea, LoadingBlock, cx } from '../../components/ui';
@@ -772,9 +772,164 @@ function DependenciesPanel({ ctx }: { ctx: ExtensionContext }) {
   );
 }
 
+// ───────── Quality: inspection checklist (ITP) ─────────
+
+const POINT_TONE = { HOLD: 'danger', WITNESS: 'warning', REVIEW: 'info' } as const;
+const POINT_LABEL = { HOLD: 'Hold point', WITNESS: 'Witness', REVIEW: 'Review' } as const;
+const RESULT_TONE = { PENDING: 'neutral', PASS: 'success', FAIL: 'danger', NA: 'neutral' } as const;
+const RESULT_LABEL = { PENDING: 'Pending', PASS: 'Pass', FAIL: 'Fail', NA: 'N/A' } as const;
+
+function ChecklistPanel({ ctx }: { ctx: ExtensionContext }) {
+  const items = ((ctx.record.checklist as ChecklistItem[]) ?? []).slice().sort((a, b) => a.lineNo - b.lineNo);
+  const base = `/projects/${ctx.projectId}/inspections/${ctx.record.id}/checklist`;
+  const [templateId, setTemplateId] = useState<string | null>(null);
+  const [editing, setEditing] = useState<{ item: ChecklistItem; result: ChecklistResult; remarks: string } | null>(null);
+  const [ncrFor, setNcrFor] = useState<ChecklistItem | null>(null);
+  const [severity, setSeverity] = useState('MAJOR');
+  const apply = useAction(ctx, () => api.post(`${base}/template`, { templateId }), 'Checklist applied', () => setTemplateId(null));
+  const save = useAction(ctx, () => api.put(`${base}/${editing!.item.id}`, { result: editing!.result, remarks: editing!.remarks || null }), 'Result recorded', () => setEditing(null));
+  const ncr = useAction(ctx, () => api.post<Rec>(`${base}/${ncrFor!.id}/ncr`, { severity }), 'NCR raised', (r) => {
+    setNcrFor(null);
+    toast.message(`${(r as Rec).number} created — complete the root cause and actions on the NCR`);
+  });
+  const manage = ctx.can('quality.manage');
+  const release = ctx.can('quality.approve');
+  const open = ctx.record.status !== 'CLOSED';
+  const s = checklistSummary(items);
+  const canApply = manage && ctx.record.status === 'OPEN' && s.pending === s.total;
+
+  return (
+    <div className="space-y-4">
+      {items.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 text-sm">
+          <Badge tone={s.outcome === 'PASS' ? 'success' : s.outcome === 'FAIL' ? 'danger' : 'neutral'}>{s.outcome === 'PENDING' ? 'In progress' : s.outcome === 'PASS' ? 'All checks passed' : 'Check failed'}</Badge>
+          <span className="text-muted">
+            {s.total - s.pending} of {s.total} recorded · {s.passed} pass · {s.failed} fail · {s.notApplicable} N/A
+          </span>
+        </div>
+      )}
+      {items.length === 0 && <Notice>No checklist yet. Apply an ITP template to list the checks, hold points and acceptance criteria for this inspection.</Notice>}
+      {items.some((i) => i.pointType === 'HOLD') && (
+        <Notice tone="warning">
+          <AlertTriangle className="h-4 w-4 shrink-0" />
+          Hold points must be released by a quality approver before later checks can be recorded.
+        </Notice>
+      )}
+      {canApply && (
+        <div className="grid gap-2 rounded-lg border border-line p-3 sm:grid-cols-[1fr_auto] sm:items-end">
+          <Field label={items.length ? 'Replace with template' : 'Apply ITP template'}>
+            <RefSelect source="checklistTemplates" value={templateId} onChange={setTemplateId} />
+          </Field>
+          <Button loading={apply.isPending} disabled={!templateId} onClick={() => apply.mutate(undefined)}>
+            Apply
+          </Button>
+        </div>
+      )}
+      <ol className="space-y-2">
+        {items.map((it, idx) => {
+          const hold = blockingHoldPoint(items, it.lineNo);
+          const needsRelease = it.pointType === 'HOLD' && !release;
+          const showStage = it.stage && it.stage !== items[idx - 1]?.stage;
+          return (
+            <li key={it.id}>
+              {showStage && <h4 className="mb-1 mt-3 text-xs font-semibold uppercase text-muted">{it.stage}</h4>}
+              <div className={cx('rounded-lg border p-3', it.result === 'FAIL' ? 'border-red-200 bg-red-50/40' : 'border-line')}>
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <p className="text-sm font-medium">
+                    {it.lineNo}. {it.description} <Badge tone={POINT_TONE[it.pointType]}>{POINT_LABEL[it.pointType]}</Badge>
+                  </p>
+                  <Badge tone={RESULT_TONE[it.result]}>{RESULT_LABEL[it.result]}</Badge>
+                </div>
+                {(it.acceptanceCriteria || it.reference) && (
+                  <p className="mt-1 text-xs text-muted">
+                    {it.acceptanceCriteria && <>Accept: {it.acceptanceCriteria}</>}
+                    {it.acceptanceCriteria && it.reference && ' · '}
+                    {it.reference && <>Ref: {it.reference}</>}
+                  </p>
+                )}
+                {it.remarks && <p className="mt-1 text-sm">{it.remarks}</p>}
+                {it.checkedAt && <p className="mt-1 text-xs text-muted">Recorded {formatDateTime(it.checkedAt)}</p>}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {open && manage && !hold && !needsRelease && (
+                    <Button size="sm" variant="outline" onClick={() => setEditing({ item: it, result: it.result === 'PENDING' ? 'PASS' : it.result, remarks: it.remarks ?? '' })}>
+                      {it.result === 'PENDING' ? 'Record result' : 'Change'}
+                    </Button>
+                  )}
+                  {open && manage && hold && <span className="text-xs text-muted">Waiting for hold point {hold.lineNo}</span>}
+                  {open && manage && !hold && needsRelease && it.result === 'PENDING' && <span className="text-xs text-muted">Needs release by a quality approver</span>}
+                  {it.result === 'FAIL' && !it.ncrId && manage && (
+                    <Button size="sm" variant="outline" className="text-red-700" onClick={() => setNcrFor(it)}>
+                      Raise NCR
+                    </Button>
+                  )}
+                  {it.ncrId && (
+                    <Link className="text-xs font-medium text-brand-700 underline" to={`/quality/ncrs/${it.ncrId}`}>
+                      View NCR
+                    </Link>
+                  )}
+                </div>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+      {editing && (
+        <Dialog
+          open
+          onOpenChange={(o) => !o && setEditing(null)}
+          title={`Check ${editing.item.lineNo}: ${editing.item.description}`}
+          description={editing.item.acceptanceCriteria ? `Acceptance criteria: ${editing.item.acceptanceCriteria}` : undefined}
+          footer={
+            <Button loading={save.isPending} disabled={editing.result === 'FAIL' && !editing.remarks.trim()} onClick={() => save.mutate(undefined)}>
+              Save
+            </Button>
+          }
+        >
+          <div className="space-y-3">
+            <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="Result">
+              {(['PASS', 'FAIL', 'NA', 'PENDING'] as const).map((r) => (
+                <Button key={r} size="sm" role="radio" aria-checked={editing.result === r} variant={editing.result === r ? 'primary' : 'outline'} onClick={() => setEditing({ ...editing, result: r })}>
+                  {r === 'PENDING' ? 'Reset' : RESULT_LABEL[r]}
+                </Button>
+              ))}
+            </div>
+            <Field htmlFor="checklist-remarks" label={editing.result === 'FAIL' ? 'What failed' : 'Remarks'} required={editing.result === 'FAIL'}>
+              <Textarea id="checklist-remarks" value={editing.remarks} onChange={(e) => setEditing({ ...editing, remarks: e.target.value })} />
+            </Field>
+          </div>
+        </Dialog>
+      )}
+      {ncrFor && (
+        <Dialog
+          open
+          onOpenChange={(o) => !o && setNcrFor(null)}
+          title="Raise NCR"
+          description={`From check ${ncrFor.lineNo}: ${ncrFor.description}. The description is filled from the check, its acceptance criteria and your remarks.`}
+          footer={
+            <Button loading={ncr.isPending} onClick={() => ncr.mutate(undefined)}>
+              Raise NCR
+            </Button>
+          }
+        >
+          <Field htmlFor="ncr-severity" label="Severity" required>
+            <select id="ncr-severity" className="input" value={severity} onChange={(e) => setSeverity(e.target.value)}>
+              {['MINOR', 'MAJOR', 'CRITICAL'].map((v) => (
+                <option key={v} value={v}>
+                  {humanize(v)}
+                </option>
+              ))}
+            </select>
+          </Field>
+        </Dialog>
+      )}
+    </div>
+  );
+}
+
 export const EXTENSIONS: Record<string, Extension> = {
   mrs: { actions: (ctx) => <MrActions ctx={ctx} /> },
   activities: { panels: (ctx) => [{ value: 'deps', label: 'Dependencies', render: () => <DependenciesPanel ctx={ctx} /> }] },
+  inspections: { panels: (ctx) => [{ value: 'checklist', label: 'Checklist', render: () => <ChecklistPanel ctx={ctx} /> }] },
   prs: { actions: (ctx) => <PrActions ctx={ctx} />, panels: (ctx) => [{ value: 'budget', label: 'Budget check', render: () => <BudgetCheckPanel record={ctx.record} /> }] },
   purchaseOrders: {
     actions: (ctx) => <PoActions ctx={ctx} />,

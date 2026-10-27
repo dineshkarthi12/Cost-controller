@@ -8,6 +8,9 @@ import {
   labourLineCost,
   calculateMeasurementQty,
   validateGrnLine,
+  allowedInspectionResults,
+  checklistSummary,
+  type ChecklistItem,
 } from '@toprock/shared';
 import type { Tx } from '../lib/prisma.js';
 import { businessRule, conflict, validationError } from '../lib/errors.js';
@@ -448,6 +451,24 @@ export const HOOKS: Record<string, ResourceHooks> = {
     },
   },
   documents: { include: { revisions: { orderBy: { createdAt: 'desc' } } } },
+  checklistTemplates: {
+    include: { items: { orderBy: { lineNo: 'asc' } } },
+    async prepare(_tx, _ctx, _scope, data) {
+      lines(data, 'items')?.forEach((l, i) => (l.lineNo = i + 1));
+    },
+  },
+  inspections: {
+    // The overall result must agree with the checklist (see allowedInspectionResults).
+    async prepare(_tx, _ctx, _scope, data, existing) {
+      const items = (existing?.checklist ?? []) as ChecklistItem[];
+      if (!items.length) return;
+      if (data.result !== undefined && data.result !== existing!.result) {
+        const allowed = allowedInspectionResults(items);
+        if (!allowed.includes(data.result)) throw validationError(`With this checklist the result can only be ${allowed.join(' or ')}`);
+      }
+      if (data.status === 'CLOSED' && checklistSummary(items).pending) throw businessRule('Record every checklist item before closing the inspection');
+    },
+  },
   stores: {},
   boqItems: { include: { rateAnalysis: true } },
 };

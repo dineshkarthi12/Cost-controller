@@ -6,3 +6,4 @@ export * from './procurement.js';
 export * from './stock.js';
 export * from './labour.js';
 export * from './schedule.js';
+export * from './checklist.js';

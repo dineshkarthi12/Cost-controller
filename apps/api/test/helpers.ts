@@ -59,6 +59,7 @@ const ROLES = {
   bill: ['BILLING_ENGINEER', 'SUBCONTRACTOR_MANAGER'],
   outsider: ['SITE_ENGINEER'],
   auditor: ['AUDITOR'],
+  qa: ['QUALITY_ENGINEER'],
 } as const;
 export type Who = keyof typeof ROLES;
 
@@ -90,7 +91,7 @@ export async function setupWorld() {
   const cement = await A.post('/org/r/materials', { code: `CEM-${tag}`, name: 'Cement', category: 'Cement', unit: 'BAG', standardRate: '400' });
   const project = await A.post('/projects', { code: tag.slice(-8), name: `Project ${tag}`, template: 'NONE', clientId: client.id, contractValue: '20000000', contractType: 'ITEM_RATE', currency: 'INR', taxRate: '0.18', retentionPct: '0.05', startDate: day(-60), plannedCompletionDate: day(300), status: 'ACTIVE' });
   const P = `/projects/${project.id}`;
-  for (const k of ['cc', 'pm', 'pd', 'qs', 'proc', 'se', 'se2', 'fin', 'ap', 'bill'] as Who[]) await A.post(`${P}/members`, { userId: users[k].id });
+  for (const k of ['cc', 'pm', 'pd', 'qs', 'proc', 'se', 'se2', 'fin', 'ap', 'bill', 'qa'] as Who[]) await A.post(`${P}/members`, { userId: users[k].id });
   const material = await A.post(`${P}/r/costCodes`, { code: 'MAT-01', name: 'Materials', category: 'MATERIAL' });
   const subcon = await A.post(`${P}/r/costCodes`, { code: 'SUB-01', name: 'Subcontract works', category: 'SUBCONTRACT' });
   const other = await A.post(`${P}/r/costCodes`, { code: 'OH-01', name: 'Overheads', category: 'OVERHEAD' });

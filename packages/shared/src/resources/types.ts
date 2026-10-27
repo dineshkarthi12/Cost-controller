@@ -41,6 +41,7 @@ export type RefSource =
   | 'clientBills'
   | 'ncrs'
   | 'inspections'
+  | 'checklistTemplates'
   | 'milestones'
   | 'measurements';
 

@@ -27,7 +27,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 7 | Manpower | Working | MPR with workflow (verified own labour posts ACTUAL), attendance register with audited corrections, MPR from attendance, workers | Payroll export not implemented |
 | 8 | Daily Site Diary | Working | DPR with workflow, weather, stoppages, links to same-day registers | — |
 | 9 | Work Progress | Working | Weighted physical progress, planned vs actual, progress entries (never billable) | — |
-| 10 | Planning & Schedule | Partial | Activities, baselines, Gantt, 3-week look-ahead, milestones, delays | **No critical-path calculation; dependencies are stored but not drawn; no Primavera/MS Project import** |
+| 10 | Planning & Schedule | Working · tested | Activities, baselines, dependencies (FS/SS/FF/SF with lag, loops refused), critical path (CPM) forecast from the data date with total and free float, forecast vs planned finish, Gantt with critical activities highlighted, 3-week look-ahead, milestones, delays. Import from Microsoft Project XML and Primavera P6 XER with preview (activities matched by code, links replaced) | Calendar days only (no working-day or holiday calendars); no resource levelling |
 | 11 | Site Evidence & Photos | Working | Camera capture on mobile, multi-upload, offline upload queue (IndexedDB), magic-byte validation, geotag and capture time, review, links to records | Offline queue not covered by tests |
 | 12 | Equipment & Machinery | Working | Register, daily logs with workflow (owned equipment posts ACTUAL), maintenance, utilisation analysis | Rental invoicing is via supplier invoices |
 | 13 | WBS & Cost Codes | Working · tested | WBS, cost codes, import with preview | — |
@@ -56,7 +56,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 36 | Contract Administration | Working · tested (clauses) | Contracts, key terms, source clauses with unofficial interpretation and validation (kept across unrelated edits), guarantees and insurance | No automatic obligation extraction (deliberately) |
 | 37 | Change Orders & Variations | Working | Variations with workflow; approved cost impact creates a budget revision (setting) | Not covered by tests |
 | 38 | Risks & Claims | Working | Risk register (score, exposure), claims and EOT | — |
-| 39 | Quality & Rework | Partial | Inspections, NCR with root cause, corrective action and estimated rework cost | **ITP / checklist templates not implemented** (model only). Actual rework cost is entered as an expense. |
+| 39 | Quality & Rework | Working · tested | Inspections, ITP / checklist templates (hold, witness and review points with acceptance criteria and references), template applied to an inspection, per-item pass / fail / N/A with remarks, hold points released only by quality approvers before later checks, overall result driven by the checklist, NCR raised from a failed check (pre-filled), NCR with root cause, corrective action and estimated rework cost | Actual rework cost is entered as an expense. Checklist photos are attached to the inspection, not to individual checks |
 | 40 | Safety & Inspections | Working | Incidents and observations, toolbox talks | No permit-to-work |
 | 41 | Drawing & Document Control | Working | Register, revisions with approval workflow, confidentiality | No file viewer or markup |
 | 42 | Transmittals & RFIs | Working | Transmittals (send, acknowledge), RFIs | — |
@@ -64,7 +64,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 44 | Project Closeout | Working | Checklist, live open-item indicators, final cost, lessons learned, approval, archive | — |
 | 45 | Users, Roles & Permissions | Working · tested | Invite by email (one-time link shown to the admin if email is not set up), edit, deactivate (revokes sessions), role/permission matrix, reset to defaults | — |
 | 46 | Audit Trail | Working · tested | Append-only (database-enforced), filters, before/after diff | — |
-| 47 | Integrations | Working (email) · Interface only (others) | Email (SMTP) status and "send test email". Accounting/ERP catalogue (Tally, SAP, Zoho Books, payroll, S3, Primavera, MS Project) with non-secret configuration; import history | **No accounting/ERP connector is active, and TOPROCK confirmed none is needed now.** |
+| 47 | Integrations | Working (email) · Interface only (others) | Email (SMTP) status and "send test email". Accounting/ERP catalogue (Tally, SAP, Zoho Books, payroll, S3, Primavera, MS Project) with non-secret configuration; import history. Primavera and MS Project schedules are imported as files on the Schedule page, not through a live connection | **No accounting/ERP connector is active, and TOPROCK confirmed none is needed now.** |
 | 48 | Settings | Working | Business rules, visible modules, document numbering, workflow designer | — |
 
 ## Cross-cutting capabilities

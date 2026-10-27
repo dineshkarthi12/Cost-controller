@@ -22,6 +22,9 @@ export function resourcePath(def: ResourceDef, projectId: string, id?: string) {
   return id ? `${base}/${id}` : base;
 }
 
+/** Lower-cases a label for use mid-sentence, keeping acronyms such as ITP, NCR or RFI. */
+const lowerLabel = (s: string) => s.split(' ').map((w) => (/^[A-Z]{2,}s?$/.test(w) ? w : w.toLowerCase())).join(' ');
+
 export function renderValue(f: FieldDef, rec: Rec, currency = 'INR'): ReactNode {
   const v = rec[f.name];
   if (v === null || v === undefined || v === '') return <span className="text-slate-400">—</span>;
@@ -136,7 +139,7 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
             }}
           >
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted" />
-            <Input value={search} onChange={(e) => setSearch(e.target.value)} onBlur={() => search !== state.q && update({ q: search })} placeholder={`Search ${def.plural.toLowerCase()}…`} className="pl-9" aria-label="Search" />
+            <Input value={search} onChange={(e) => setSearch(e.target.value)} onBlur={() => search !== state.q && update({ q: search })} placeholder={`Search ${lowerLabel(def.plural)}…`} className="pl-9" aria-label="Search" />
           </form>
           {filterFields.map((f) =>
             f.type === 'ref' ? (
@@ -169,12 +172,12 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
           sort={{ field: state.sort, dir: state.dir }}
           onSort={(field) => update({ sort: field, dir: state.sort === field && state.dir === 'asc' ? 'desc' : 'asc' })}
           pagination={q.data ? { page: q.data.page, pageSize: q.data.pageSize, total: q.data.total, onPage: (p) => update({ page: p }) } : undefined}
-          empty={{ title: `No ${def.plural.toLowerCase()} found`, description: state.q || Object.values(state.filters).some(Boolean) ? 'Try clearing the filters.' : canCreate ? `Create the first ${def.label.toLowerCase()} for this project.` : undefined, action: canCreate ? <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => navigate(`${basePath}/new`)}>New {def.label.toLowerCase()}</Button> : undefined }}
+          empty={{ title: `No ${lowerLabel(def.plural)} found`, description: state.q || Object.values(state.filters).some(Boolean) ? 'Try clearing the filters.' : canCreate ? `Create the first ${def.label.toLowerCase()}${def.projectScoped ? ' for this project' : ''}.` : undefined, action: canCreate ? <Button size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => navigate(`${basePath}/new`)}>New {def.label.toLowerCase()}</Button> : undefined }}
           mobileCard={(r) => (
             <div className="flex items-start justify-between gap-3">
               <div className="min-w-0">
                 <p className="truncate text-sm font-semibold text-navy-800">{renderValue(titleField, r, project?.currency)}</p>
-                <p className="mt-0.5 truncate text-xs text-muted">{listFields.slice(1, 3).map((f) => (f.type === 'ref' ? r._labels?.[f.name] : f.type === 'date' ? formatDate(String(r[f.name] ?? '')) : r[f.name] ? humanize(String(r[f.name])) : null)).filter(Boolean).join(' · ')}</p>
+                <p className="mt-0.5 truncate text-xs text-muted">{listFields.slice(1, 3).map((f) => (f.type === 'ref' ? r._labels?.[f.name] : f.type === 'date' ? formatDate(String(r[f.name] ?? '')) : f.type === 'boolean' ? (r[f.name] ? f.label : `Not ${f.label.toLowerCase()}`) : r[f.name] ? humanize(String(r[f.name])) : null)).filter(Boolean).join(' · ')}</p>
               </div>
               <div className="shrink-0 text-right text-sm">{'status' in r ? <StatusBadge status={String(r.status)} /> : null}</div>
             </div>

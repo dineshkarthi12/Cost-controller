@@ -1,5 +1,6 @@
 import type { ResourceDef } from './types.js';
 import { PRIORITY, TASK_STATUS } from '../statuses.js';
+import { CHECKLIST_POINT_TYPES } from '../calc/checklist.js';
 
 export const inspections: ResourceDef = {
   key: 'inspections',
@@ -23,9 +24,47 @@ export const inspections: ResourceDef = {
     { name: 'requestedDate', label: 'Requested', type: 'date', required: true, list: true, sortable: true },
     { name: 'inspectedDate', label: 'Inspected', type: 'date', list: true },
     { name: 'inspectorId', label: 'Inspector', type: 'ref', ref: 'users', list: true },
-    { name: 'result', label: 'Result', type: 'select', options: ['PENDING', 'PASS', 'FAIL', 'CONDITIONAL'], default: 'PENDING', list: true, filter: true },
+    { name: 'templateId', label: 'Checklist template', type: 'ref', ref: 'checklistTemplates', readOnly: true },
+    { name: 'result', label: 'Result', type: 'select', options: ['PENDING', 'PASS', 'FAIL', 'CONDITIONAL'], default: 'PENDING', list: true, filter: true, help: 'With a checklist, this follows the item results (a fully passed checklist may be marked Conditional)' },
     { name: 'remarks', label: 'Remarks', type: 'textarea', span: 3 },
     { name: 'status', label: 'Status', type: 'select', options: ['OPEN', 'INSPECTED', 'CLOSED'], default: 'OPEN', list: true, filter: true },
+  ],
+};
+
+export const checklistTemplates: ResourceDef = {
+  key: 'checklistTemplates',
+  model: 'checklistTemplate',
+  label: 'Checklist Template',
+  plural: 'ITP & Checklist Templates',
+  area: 'quality',
+  projectScoped: false,
+  orgScoped: true,
+  titleField: 'name',
+  creatorField: 'createdById',
+  linesRelation: 'items',
+  defaultSort: { field: 'name', dir: 'asc' },
+  searchFields: ['name', 'description'],
+  deletable: true,
+  description: 'Inspection and test plans shared by all projects. Hold points must be released by someone with quality approval rights before later items can be recorded.',
+  fields: [
+    { name: 'name', label: 'Name', type: 'text', required: true, list: true, sortable: true, span: 2, maxLength: 120 },
+    { name: 'type', label: 'Type', type: 'select', options: ['ITP', 'WIR', 'QUALITY', 'MATERIAL', 'SAFETY', 'HANDOVER'], required: true, default: 'ITP', list: true, filter: true },
+    { name: 'description', label: 'Scope', type: 'textarea', span: 3 },
+    { name: 'active', label: 'Active', type: 'boolean', default: true, list: true, filter: true, help: 'Inactive templates cannot be applied to new inspections' },
+    {
+      name: 'items',
+      label: 'Checks',
+      type: 'lines',
+      required: true,
+      span: 3,
+      lines: [
+        { name: 'stage', label: 'Stage', type: 'text', placeholder: 'Before concreting' },
+        { name: 'description', label: 'Check', type: 'text', required: true },
+        { name: 'acceptanceCriteria', label: 'Acceptance criteria', type: 'text' },
+        { name: 'reference', label: 'Reference', type: 'text', placeholder: 'Drawing / spec / IS clause' },
+        { name: 'pointType', label: 'Point', type: 'select', options: CHECKLIST_POINT_TYPES, required: true, default: 'REVIEW' },
+      ],
+    },
   ],
 };
 

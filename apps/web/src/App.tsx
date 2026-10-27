@@ -82,7 +82,7 @@ const MODULE_TABS: Record<string, TabDef[]> = {
   contracts: [T('Contracts', '/contracts', 'contracts')],
   variations: [T('Variations', '/variations', 'variations')],
   risks: [T('Risk register', '/risks', 'risks'), T('Claims & EOT', '/risks/claims', 'claims')],
-  quality: [T('Inspections', '/quality', 'inspections'), T('NCR & rework', '/quality/ncrs', 'ncrs')],
+  quality: [T('Inspections', '/quality', 'inspections'), T('NCR & rework', '/quality/ncrs', 'ncrs'), T('ITP templates', '/quality/templates', 'checklistTemplates')],
   safety: [T('Incidents & observations', '/safety', 'safetyIncidents'), T('Toolbox talks', '/safety/toolbox-talks', 'toolboxTalks')],
   documents: [T('Document register', '/documents', 'documents')],
   transmittals: [T('Transmittals', '/transmittals', 'transmittals'), T('RFIs & technical queries', '/transmittals/rfis', 'rfis')],
