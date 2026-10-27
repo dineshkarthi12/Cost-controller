@@ -53,6 +53,8 @@ Open `https://<your-project>.vercel.app/api/health` in the browser:
 
 The sign-in page shows the same messages. "Invalid email or password" means the server works; check the email and password.
 
+**Forgot the password, or the account is locked** (5 wrong attempts lock it for 15 minutes)? Set `SEED_PASSWORD` to the new password, add `RESET_ADMIN_PASSWORD` = `true`, and redeploy. The administrator accounts (`admin@toprock.example` and `ADMIN_EMAIL`) get the new password, are unlocked, and are signed out everywhere. The reset is recorded in the audit trail. **Delete `RESET_ADMIN_PASSWORD` afterwards**, otherwise every deployment resets the password again.
+
 ## What runs differently on Vercel
 
 | Topic | On Vercel |

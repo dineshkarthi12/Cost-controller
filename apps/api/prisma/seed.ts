@@ -114,6 +114,18 @@ async function main() {
     const own = await createUser(org.id, { key: 'owner', email: ownEmail, name: process.env.ADMIN_NAME?.trim() || 'Administrator', designation: 'Administrator', department: 'Management', roles: ['SUPER_ADMIN'], employeeId: 'TRG-0000' });
     console.log(`✔ Administrator: ${own.email}`);
   }
+  // Recovery: RESET_ADMIN_PASSWORD=true sets the administrators' password to SEED_PASSWORD, unlocks
+  // them and signs them out everywhere. Remove the variable after use.
+  if (process.env.RESET_ADMIN_PASSWORD === 'true') {
+    const emails = [admin.email, ...(ownEmail ? [ownEmail] : [])];
+    const hash = await hashPassword(PASSWORD);
+    for (const email of emails) {
+      const u = await prisma.user.update({ where: { email }, data: { passwordHash: hash, failedLogins: 0, lockedUntil: null, status: 'ACTIVE', passwordChangedAt: new Date() } });
+      await prisma.session.updateMany({ where: { userId: u.id, revokedAt: null }, data: { revokedAt: new Date() } });
+      await prisma.auditEvent.create({ data: { orgId: org.id, actorId: null, action: 'ADMIN_PASSWORD_RESET', entityType: 'user', entityId: u.id, summary: `${email}: password reset and account unlocked by deployment setting RESET_ADMIN_PASSWORD` } });
+      console.log(`✔ Password reset and account unlocked: ${email}`);
+    }
+  }
   if (!DEMO) return;
   if (await prisma.project.count({ where: { orgId: org.id } })) {
     console.log('Demo data already present — skipping. Run `npm run db:reset` to rebuild.');
