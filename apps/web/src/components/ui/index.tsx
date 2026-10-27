@@ -250,10 +250,10 @@ export function KpiCard({ label, value, sub, icon, tone = 'primary', hint, class
   const iconTone = { primary: 'bg-brand-50 text-navy-700', success: 'bg-emerald-50 text-emerald-700', warning: 'bg-amber-50 text-amber-700', danger: 'bg-red-50 text-red-600', neutral: 'bg-slate-100 text-slate-600' }[tone];
   return (
     <div className={cx('card flex items-start gap-3 p-4', className)} title={hint}>
-      {icon && <div className={cx('rounded-lg p-2.5', iconTone)}>{icon}</div>}
+      {icon && <div className={cx('hidden shrink-0 rounded-lg p-2.5 sm:block', iconTone)}>{icon}</div>}
       <div className="min-w-0">
-        <p className="truncate text-xs font-medium text-muted">{label}</p>
-        <p className="mt-0.5 truncate text-lg font-semibold tracking-tight text-ink sm:text-xl">{value}</p>
+        <p className="text-xs leading-snug font-medium text-muted">{label}</p>
+        <p className="mt-0.5 text-lg font-semibold tracking-tight break-words text-ink sm:text-xl">{value}</p>
         {sub && <div className="mt-0.5 text-xs text-muted">{sub}</div>}
       </div>
     </div>

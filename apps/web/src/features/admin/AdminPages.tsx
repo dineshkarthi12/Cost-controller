@@ -5,7 +5,7 @@ import { KeyRound, Pencil, Plug, Plus, RotateCcw, Save, ShieldCheck, Trash2, Use
 import { DEFAULT_DOC_TYPES, MODULES, MODULE_GROUPS, PERMISSION_AREAS, SPECIAL_PERMISSIONS } from '@toprock/shared';
 import { api, type Paged } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
-import { formatDate, formatDateTime, formatMoney, humanize } from '../../lib/format';
+import { formatDateTime, formatMoney, humanize } from '../../lib/format';
 import { Badge, Button, Card, Checkbox, ConfirmDialog, Dialog, ErrorState, Field, Input, LoadingBlock, PermissionDenied, Select, StatusBadge, TabPanel, Tabs, Textarea, cx } from '../../components/ui';
 import { DataTable } from '../../components/data/DataTable';
 import { Page, PageHeader } from '../../components/layout/AppShell';
@@ -677,4 +677,3 @@ function WorkflowSettings() {
   );
 }
 
-export { formatDate };

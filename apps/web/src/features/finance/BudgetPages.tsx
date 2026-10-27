@@ -83,7 +83,7 @@ export function BudgetPage() {
           dense
           caption="Budget by cost code"
           columns={[
-            { key: 'code', header: 'Code', cell: (r) => <Link to={`/budget/ledger?costCodeId=${r.costCodeId}`} className="font-medium text-navy-800 hover:underline">{r.code}</Link> },
+            { key: 'code', header: 'Code', cell: (r) => <Link to={`/budget/ledger?costCodeId=${r.costCodeId}`} className="font-medium whitespace-nowrap text-navy-800 hover:underline">{r.code}</Link> },
             { key: 'name', header: 'Description', cell: (r) => <span><span className="block">{r.name}</span><span className="text-xs text-muted">{humanize(r.category)}</span></span> },
             {
               key: 'ob',
@@ -307,7 +307,7 @@ export function CashFlowPage() {
             }
           />
           <Card bodyClassName="p-0" title="Cash flow table" className="lg:col-span-2">
-            <DataTable rows={rows} rowKey={(r) => r.month} dense columns={(q.data.columns ?? []).map((c, i) => ({ key: c.key, header: c.label, align: i ? 'right' : 'left', cell: (r) => (i ? formatMoney(r[c.key], cur) : r[c.key]) }))} empty={{ title: 'No cash plan or payments yet' }} />
+            <DataTable<Record<string, string>> rows={rows} rowKey={(r) => r.month} dense columns={(q.data.columns ?? []).map((c, i) => ({ key: c.key, header: c.label, align: i ? 'right' : 'left', cell: (r) => (i ? formatMoney(r[c.key], cur) : r[c.key]) }))} empty={{ title: 'No cash plan or payments yet' }} />
           </Card>
         </div>
       )}

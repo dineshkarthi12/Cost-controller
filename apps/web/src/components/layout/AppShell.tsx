@@ -9,7 +9,7 @@ import { api, type Paged } from '../../lib/api';
 import { useOnline, useUploadQueue } from '../../lib/offline';
 import { relativeTime } from '../../lib/format';
 import { ModuleIcon } from '../../lib/icons';
-import { Badge, IconButton, Menu, cx } from '../ui';
+import { Badge, EmptyState, IconButton, Menu, cx } from '../ui';
 
 const COLLAPSE_KEY = 'tr.sidebarCollapsed';
 
@@ -309,6 +309,21 @@ function MobileBottomNav({ onMore }: { onMore: () => void }) {
   );
 }
 
+/** Routes that work without a current project. Everything else needs one. */
+const PROJECTLESS = ['/', '/projects', '/account', '/notifications', '/approvals', '/admin'];
+
+function ProjectGate({ children }: { children: ReactNode }) {
+  const { me, projectId } = useAuth();
+  const { pathname } = useLocation();
+  const free = PROJECTLESS.some((p) => (p === '/' ? pathname === '/' : pathname === p || pathname.startsWith(`${p}/`)));
+  if (free || projectId || !me) return <>{children}</>;
+  return (
+    <Page>
+      <EmptyState title="No project assigned" description="You are not a member of any active project yet. Ask a project manager or administrator to add you to a project." />
+    </Page>
+  );
+}
+
 export function AppShell() {
   const [collapsed, setCollapsed] = useState(() => {
     try {
@@ -404,7 +419,9 @@ export function AppShell() {
           <StatusStrip />
         </header>
         <main id="main" ref={mainRef} className="flex-1 overflow-y-auto pb-24 lg:pb-8">
-          <Outlet />
+          <ProjectGate>
+            <Outlet />
+          </ProjectGate>
         </main>
       </div>
       <MobileBottomNav onMore={() => setDrawer(true)} />

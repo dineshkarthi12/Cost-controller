@@ -51,16 +51,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     queryFn: () => api.get<Me>('/auth/me', { projectId: projectId ?? undefined }),
     retry: false,
     staleTime: 60_000,
+    // Keep the previous profile while refetching for another project, so the shell does not flash.
+    placeholderData: (prev) => prev,
   });
   const me = meQuery.isError ? null : (meQuery.data ?? null);
+  // Resolved synchronously so pages never request project data with an empty id.
+  const effectiveId = me ? (me.projects.some((p) => p.id === projectId) ? projectId : (me.projects[0]?.id ?? null)) : null;
 
   useEffect(() => {
-    if (!me) return;
-    if (!projectId || !me.projects.some((p) => p.id === projectId)) {
-      const first = me.projects[0]?.id ?? null;
-      if (first !== projectId) setProjectIdState(first);
-    }
-  }, [me, projectId]);
+    if (me && effectiveId !== projectId) setProjectIdState(effectiveId);
+  }, [me, effectiveId, projectId]);
 
   const setProjectId = useCallback(
     (id: string) => {
@@ -88,8 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return {
       me,
       loading: meQuery.isLoading,
-      project: me?.projects.find((p) => p.id === projectId) ?? null,
-      projectId: me?.projects.some((p) => p.id === projectId) ? projectId : null,
+      project: me?.projects.find((p) => p.id === effectiveId) ?? null,
+      projectId: effectiveId,
       setProjectId,
       can: (perm) => !perm || perms.has(perm),
       refresh: () => meQuery.refetch(),
@@ -99,7 +99,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         window.location.href = '/login';
       },
     };
-  }, [me, meQuery, projectId, setProjectId, qc]);
+  }, [me, meQuery, effectiveId, setProjectId, qc]);
 
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }

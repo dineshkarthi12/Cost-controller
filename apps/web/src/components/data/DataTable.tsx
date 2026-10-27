@@ -88,7 +88,7 @@ export function DataTable<T>({ columns, rows, rowKey, loading, error, onRetry, o
                 className={cx('group', onRowClick && 'cursor-pointer hover:bg-brand-50/40 focus:bg-brand-50/60 focus:outline-none')}
               >
                 {columns.map((c) => (
-                  <td key={c.key} className={cx('border-b border-line px-3 align-middle text-ink', dense ? 'py-1.5' : 'py-2.5', c.align === 'right' ? 'text-right tabular-nums' : c.align === 'center' ? 'text-center' : 'text-left', c.hideOnMobile && 'hidden md:table-cell', c.className)}>
+                  <td key={c.key} className={cx('border-b border-line px-3 align-middle text-ink', dense ? 'py-1.5' : 'py-2.5', c.align === 'right' ? 'text-right tabular-nums whitespace-nowrap' : c.align === 'center' ? 'text-center' : 'text-left', c.hideOnMobile && 'hidden md:table-cell', c.className)}>
                     {c.cell(r)}
                   </td>
                 ))}

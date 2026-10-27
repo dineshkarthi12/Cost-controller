@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { computeEvm, D, humanize, money, sum, TASK_STATUS_LABEL } from '@toprock/shared';
+import { computeEvm, D, formatMoney, humanize, money, sum, TASK_STATUS_LABEL } from '@toprock/shared';
 import { prisma } from '../lib/prisma.js';
 import { isoDate, periodCode, today, toDateOnly } from '../lib/dates.js';
 import { can, type AccessContext } from './access.js';
@@ -80,7 +80,7 @@ const REPORTS: ReportDef[] = [
         ],
         rows,
         totals: { category: 'TOTAL', ...pos.total },
-        notes: ['Amounts exclude tax unless configured otherwise. Pending variations are excluded from budget.', `Pending variation exposure: ${pos.total.pendingVariationExposure}`],
+        notes: ['Amounts exclude tax unless configured otherwise. Pending variations are excluded from budget.', `Pending variation exposure (not in budget): ${formatMoney(pos.total.pendingVariationExposure)}`],
       };
     },
   },

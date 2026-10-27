@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, type JSX } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CheckCircle2, CircleDot, CornerUpLeft, FileUp, Paperclip, Send, XCircle, AlertTriangle, Clock } from 'lucide-react';

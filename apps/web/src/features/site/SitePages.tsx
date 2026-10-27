@@ -334,17 +334,20 @@ export function SchedulePage() {
   const span = Math.max(max - min, DAY);
   const pos = (t: number) => `${Math.min(100, Math.max(0, ((t - min) / span) * 100))}%`;
   const width = (s: number, f: number) => `${Math.max(0.6, ((Math.min(f, max) - Math.max(s, min)) / span) * 100)}%`;
-  const months: Array<{ t: number; label: string }> = [];
+  const months: Array<{ t: number; label: string; show: boolean }> = [];
   if (acts.length) {
     const d = new Date(min);
     d.setUTCDate(1);
     for (let t = d.getTime(); t <= max; ) {
       const dt = new Date(t);
-      if (t >= min) months.push({ t, label: dt.toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' }) });
+      if (t >= min) months.push({ t, label: dt.toLocaleDateString(undefined, { month: 'short', year: '2-digit', timeZone: 'UTC' }), show: true });
       dt.setUTCMonth(dt.getUTCMonth() + 1);
       t = dt.getTime();
     }
   }
+  // Thin the month labels so they never overlap (roughly 56px per label on the ~900px timeline).
+  const every = Math.max(1, Math.ceil(months.length / 14));
+  months.forEach((m, i) => (m.show = i % every === 0));
   const undated = (q.data?.items ?? []).length - (q.data?.items ?? []).filter((a) => a.plannedStart && a.plannedFinish).length;
   return (
     <>
@@ -376,8 +379,8 @@ export function SchedulePage() {
               <div className="grid grid-cols-[260px_1fr] border-b border-line bg-surface-50 text-[11px] text-muted">
                 <div className="px-3 py-1.5 font-medium">Activity</div>
                 <div className="relative h-7">
-                  {months.map((m) => (
-                    <span key={m.t} className="absolute top-1.5 border-l border-line pl-1" style={{ left: pos(m.t) }}>
+                  {months.filter((m) => m.show).map((m) => (
+                    <span key={m.t} className="absolute top-1.5 border-l border-line pl-1 whitespace-nowrap" style={{ left: pos(m.t) }}>
                       {m.label}
                     </span>
                   ))}
