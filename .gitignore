@@ -1,0 +1,13 @@
+node_modules/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+apps/api/uploads/
+apps/api/storage/
+playwright-report/
+test-results/
+*.log
+.DS_Store
+.vite/

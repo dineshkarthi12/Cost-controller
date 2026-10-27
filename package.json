@@ -1,0 +1,26 @@
+{
+  "name": "toprock-cost-control",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace @toprock/api & npm run dev --workspace @toprock/web",
+    "dev:api": "npm run dev --workspace @toprock/api",
+    "dev:web": "npm run dev --workspace @toprock/web",
+    "build": "npm run build --workspace @toprock/api && npm run build --workspace @toprock/web",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "test": "npm run test --workspace @toprock/shared && npm run test --workspace @toprock/api && npm run test --workspace @toprock/web",
+    "e2e": "playwright test",
+    "db:migrate": "npm run db:migrate --workspace @toprock/api",
+    "db:seed": "npm run db:seed --workspace @toprock/api",
+    "db:reset": "npm run db:reset --workspace @toprock/api"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "typescript": "^5.9.3"
+  }
+}

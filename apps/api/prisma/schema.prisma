@@ -1,0 +1,2973 @@
+// TOPROCK GLOBAL — Construction Cost Control Management System
+// Conventions:
+//   • Money: Decimal(18,2)   • Quantities / rates: Decimal(18,4)   • Fractions (pct): Decimal(9,6)
+//   • Business dates use @db.Date; timestamps are timestamptz
+//   • Statuses are strings validated by the API (see packages/shared/src/statuses.ts) so that
+//     organisations can extend workflows without schema changes; fixed vocabularies use enums.
+//   • Financial history is append-only (ledger, stock transactions, audit events).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ───────────────────────────── Organisation, users, access ─────────────────────────────
+
+model Organisation {
+  id           String   @id @default(cuid())
+  code         String   @unique
+  name         String
+  baseCurrency String   @default("INR")
+  timezone     String   @default("Asia/Kolkata")
+  settings     Json     @default("{}")
+  isDemo       Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  users          User[]
+  roles          Role[]
+  projects       Project[]
+  parties        Party[]
+  materials      Material[]
+  uoms           Uom[]
+  equipment      Equipment[]
+  docTypes       DocumentType[]
+  workflows      WorkflowDefinition[]
+  auditEvents    AuditEvent[]
+  integrations   IntegrationConfig[]
+  invitations    Invitation[]
+  files          FileObject[]
+  responsibility ResponsibilityAssignment[]
+  checklistTpls  ChecklistTemplate[]
+}
+
+model User {
+  id                String    @id @default(cuid())
+  orgId             String
+  email             String    @unique
+  name              String
+  employeeId        String?
+  designation       String?
+  department        String?
+  phone             String?
+  passwordHash      String?
+  status            String    @default("ACTIVE") // ACTIVE | INVITED | DEACTIVATED
+  mfaEnabled        Boolean   @default(false)
+  mfaSecret         String?
+  approvalLimit     Decimal?  @db.Decimal(18, 2)
+  skills            String[]  @default([])
+  responsibilities  String?
+  reportingManagerId String?
+  backupUserId      String?
+  failedLogins      Int       @default(0)
+  lockedUntil       DateTime?
+  lastLoginAt       DateTime?
+  passwordChangedAt DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  org              Organisation       @relation(fields: [orgId], references: [id])
+  reportingManager User?              @relation("UserManager", fields: [reportingManagerId], references: [id], onDelete: SetNull)
+  reports          User[]             @relation("UserManager")
+  backupUser       User?              @relation("UserBackup", fields: [backupUserId], references: [id], onDelete: SetNull)
+  backupFor        User[]             @relation("UserBackup")
+  roles            UserRole[]
+  memberships      ProjectMember[]
+  sessions         Session[]
+  resetTokens      PasswordResetToken[]
+  notifications    Notification[]
+  notificationPrefs NotificationPreference[]
+
+  @@index([orgId])
+
+  // generated back-relations
+  rel_project_projectManager Project[] @relation("Project_projectManagerId")
+  rel_project_createdBy Project[] @relation("Project_createdById")
+  rel_budgetRevision_createdBy BudgetRevision[] @relation("BudgetRevision_createdById")
+  rel_costLedgerEntry_createdBy CostLedgerEntry[] @relation("CostLedgerEntry_createdById")
+  rel_costForecast_createdBy CostForecast[] @relation("CostForecast_createdById")
+  rel_quantityTakeoff_createdBy QuantityTakeoff[] @relation("QuantityTakeoff_createdById")
+  rel_measurement_createdBy Measurement[] @relation("Measurement_createdById")
+  rel_measurementRevision_createdBy MeasurementRevision[] @relation("MeasurementRevision_createdById")
+  rel_siteDiary_createdBy SiteDiary[] @relation("SiteDiary_createdById")
+  rel_manpowerReport_createdBy ManpowerReport[] @relation("ManpowerReport_createdById")
+  rel_attendanceRecord_createdBy AttendanceRecord[] @relation("AttendanceRecord_createdById")
+  rel_fileObject_uploadedBy FileObject[] @relation("FileObject_uploadedById")
+  rel_attachment_uploadedBy Attachment[] @relation("Attachment_uploadedById")
+  rel_stockTransaction_createdBy StockTransaction[] @relation("StockTransaction_createdById")
+  rel_materialIssue_createdBy MaterialIssue[] @relation("MaterialIssue_createdById")
+  rel_stockCount_createdBy StockCount[] @relation("StockCount_createdById")
+  rel_materialRequisition_requestedBy MaterialRequisition[] @relation("MaterialRequisition_requestedById")
+  rel_purchaseRequisition_requestedBy PurchaseRequisition[] @relation("PurchaseRequisition_requestedById")
+  rel_rfq_createdBy Rfq[] @relation("Rfq_createdById")
+  rel_purchaseOrder_createdBy PurchaseOrder[] @relation("PurchaseOrder_createdById")
+  rel_poRevision_createdBy PoRevision[] @relation("PoRevision_createdById")
+  rel_grn_receivedBy Grn[] @relation("Grn_receivedById")
+  rel_mir_createdBy Mir[] @relation("Mir_createdById")
+  rel_supplierInvoice_createdBy SupplierInvoice[] @relation("SupplierInvoice_createdById")
+  rel_expense_createdBy Expense[] @relation("Expense_createdById")
+  rel_payment_createdBy Payment[] @relation("Payment_createdById")
+  rel_subcontract_createdBy Subcontract[] @relation("Subcontract_createdById")
+  rel_contractorBill_createdBy ContractorBill[] @relation("ContractorBill_createdById")
+  rel_clientBill_createdBy ClientBill[] @relation("ClientBill_createdById")
+  rel_creditNote_createdBy CreditNote[] @relation("CreditNote_createdById")
+  rel_equipmentLog_createdBy EquipmentLog[] @relation("EquipmentLog_createdById")
+  rel_equipmentMaintenance_createdBy EquipmentMaintenance[] @relation("EquipmentMaintenance_createdById")
+  rel_contract_createdBy Contract[] @relation("Contract_createdById")
+  rel_variation_createdBy Variation[] @relation("Variation_createdById")
+  rel_claim_createdBy Claim[] @relation("Claim_createdById")
+  rel_risk_owner Risk[] @relation("Risk_ownerId")
+  rel_risk_createdBy Risk[] @relation("Risk_createdById")
+  rel_inspection_createdBy Inspection[] @relation("Inspection_createdById")
+  rel_ncr_createdBy Ncr[] @relation("Ncr_createdById")
+  rel_safetyIncident_createdBy SafetyIncident[] @relation("SafetyIncident_createdById")
+  rel_toolboxTalk_createdBy ToolboxTalk[] @relation("ToolboxTalk_createdById")
+  rel_document_createdBy Document[] @relation("Document_createdById")
+  rel_documentRevision_createdBy DocumentRevision[] @relation("DocumentRevision_createdById")
+  rel_transmittal_createdBy Transmittal[] @relation("Transmittal_createdById")
+  rel_rfi_createdBy Rfi[] @relation("Rfi_createdById")
+  rel_task_owner Task[] @relation("Task_ownerId")
+  rel_task_createdBy Task[] @relation("Task_createdById")
+  rel_taskHandover_createdBy TaskHandover[] @relation("TaskHandover_createdById")
+  rel_closeout_createdBy Closeout[] @relation("Closeout_createdById")
+  rel_closeoutItem_owner CloseoutItem[] @relation("CloseoutItem_ownerId")
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  orgId       String
+  code        String
+  name        String
+  description String?
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  org         Organisation     @relation(fields: [orgId], references: [id])
+  permissions RolePermission[]
+  users       UserRole[]
+
+  @@unique([orgId, code])
+}
+
+model Permission {
+  code        String           @id
+  area        String
+  description String
+  roles       RolePermission[]
+}
+
+model RolePermission {
+  roleId         String
+  permissionCode String
+  role           Role       @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  permission     Permission @relation(fields: [permissionCode], references: [code], onDelete: Cascade)
+
+  @@id([roleId, permissionCode])
+}
+
+/// Role assignment. projectId = null → organisation-wide; otherwise only for that project.
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  projectId String?
+  createdAt DateTime @default(now())
+
+  user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role    Role     @relation(fields: [roleId], references: [id], onDelete: Cascade)
+  project Project? @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId, projectId])
+  @@index([projectId])
+}
+
+model ProjectMember {
+  id            String   @id @default(cuid())
+  projectId     String
+  userId        String
+  projectRole   String?  // free-text designation on this project
+  approvalLimit Decimal? @db.Decimal(18, 2)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+
+  project Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, userId])
+  @@index([userId])
+}
+
+model Session {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  mfaPending Boolean   @default(false)
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSeenAt DateTime  @default(now())
+  expiresAt  DateTime
+  revokedAt  DateTime?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Invitation {
+  id          String    @id @default(cuid())
+  orgId       String
+  email       String
+  name        String
+  roleCodes   String[]
+  projectIds  String[]
+  tokenHash   String    @unique
+  invitedById String
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  revokedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, email])
+}
+
+model IdempotencyKey {
+  id           String   @id @default(cuid())
+  key          String
+  userId       String
+  route        String
+  statusCode   Int
+  responseBody Json
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, key])
+}
+
+// ───────────────────────────── Parties, projects, structure ─────────────────────────────
+
+/// Unified counterparty master: clients, consultants, suppliers, subcontractors.
+model Party {
+  id               String   @id @default(cuid())
+  orgId            String
+  code             String
+  name             String
+  kinds            String[] // CLIENT | CONSULTANT | SUPPLIER | SUBCONTRACTOR
+  contactName      String?
+  email            String?
+  phone            String?
+  address          String?
+  taxId            String?
+  registrationNo   String?
+  bankDetails      String?
+  paymentTermsDays Int?
+  isApproved       Boolean  @default(false)
+  rating           Decimal? @db.Decimal(4, 2)
+  isActive         Boolean  @default(true)
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, code])
+  @@index([orgId, name])
+
+  // generated back-relations
+  rel_project_client Project[] @relation("Project_clientId")
+  rel_project_consultant Project[] @relation("Project_consultantId")
+  rel_costLedgerEntry_party CostLedgerEntry[] @relation("CostLedgerEntry_partyId")
+  rel_measurement_contractor Measurement[] @relation("Measurement_contractorId")
+  rel_manpowerReport_contractor ManpowerReport[] @relation("ManpowerReport_contractorId")
+  rel_worker_contractor Worker[] @relation("Worker_contractorId")
+  rel_materialIssue_contractor MaterialIssue[] @relation("MaterialIssue_contractorId")
+  rel_quotation_supplier Quotation[] @relation("Quotation_supplierId")
+  rel_purchaseOrder_supplier PurchaseOrder[] @relation("PurchaseOrder_supplierId")
+  rel_grn_supplier Grn[] @relation("Grn_supplierId")
+  rel_supplierInvoice_supplier SupplierInvoice[] @relation("SupplierInvoice_supplierId")
+  rel_expense_payee Expense[] @relation("Expense_payeeId")
+  rel_payment_party Payment[] @relation("Payment_partyId")
+  rel_subcontract_contractor Subcontract[] @relation("Subcontract_contractorId")
+  rel_contractorBill_contractor ContractorBill[] @relation("ContractorBill_contractorId")
+  rel_equipment_ownerParty Equipment[] @relation("Equipment_ownerPartyId")
+  rel_contract_counterparty Contract[] @relation("Contract_counterpartyId")
+  rel_claim_counterparty Claim[] @relation("Claim_counterpartyId")
+  rel_ncr_contractor Ncr[] @relation("Ncr_contractorId")
+  rel_transmittal_recipient Transmittal[] @relation("Transmittal_recipientId")
+}
+
+model Project {
+  id                    String    @id @default(cuid())
+  orgId                 String
+  code                  String
+  name                  String
+  description           String?
+  clientId              String?
+  consultantId          String?
+  location              String?
+  projectManagerId      String?
+  startDate             DateTime? @db.Date
+  plannedCompletionDate DateTime? @db.Date
+  actualCompletionDate  DateTime? @db.Date
+  contractValue         Decimal   @default(0) @db.Decimal(18, 2)
+  contractType          String    @default("LUMP_SUM") // LUMP_SUM | ITEM_RATE | COST_PLUS | DESIGN_BUILD | EPC
+  currency              String    @default("INR")
+  taxRate               Decimal   @default(0.18) @db.Decimal(9, 6)
+  retentionPct          Decimal   @default(0.05) @db.Decimal(9, 6)
+  advanceReceived       Decimal   @default(0) @db.Decimal(18, 2)
+  advanceRecoveryPct    Decimal   @default(0) @db.Decimal(9, 6)
+  reportingPeriod       String    @default("MONTHLY")
+  status                String    @default("PLANNING")
+  closeoutStatus        String    @default("NOT_STARTED")
+  budgetBaselinedAt     DateTime?
+  isDemo                Boolean   @default(false)
+  createdById           String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  org       Organisation    @relation(fields: [orgId], references: [id])
+  members   ProjectMember[]
+  userRoles UserRole[]
+
+  @@unique([orgId, code])
+
+  // generated foreign keys (scripts/add-relations.py)
+  client Party? @relation("Project_clientId", fields: [clientId], references: [id], onDelete: Restrict)
+  consultant Party? @relation("Project_consultantId", fields: [consultantId], references: [id], onDelete: Restrict)
+  projectManager User? @relation("Project_projectManagerId", fields: [projectManagerId], references: [id], onDelete: Restrict)
+  createdBy User? @relation("Project_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_wbsNode_project WbsNode[] @relation("WbsNode_projectId")
+  rel_costCode_project CostCode[] @relation("CostCode_projectId")
+  rel_budgetLine_project BudgetLine[] @relation("BudgetLine_projectId")
+  rel_budgetRevision_project BudgetRevision[] @relation("BudgetRevision_projectId")
+  rel_costLedgerEntry_project CostLedgerEntry[] @relation("CostLedgerEntry_projectId")
+  rel_costForecast_project CostForecast[] @relation("CostForecast_projectId")
+  rel_reportingPeriod_project ReportingPeriod[] @relation("ReportingPeriod_projectId")
+  rel_cashFlowPlan_project CashFlowPlan[] @relation("CashFlowPlan_projectId")
+  rel_boqItem_project BoqItem[] @relation("BoqItem_projectId")
+  rel_quantityTakeoff_project QuantityTakeoff[] @relation("QuantityTakeoff_projectId")
+  rel_measurement_project Measurement[] @relation("Measurement_projectId")
+  rel_activity_project Activity[] @relation("Activity_projectId")
+  rel_progressEntry_project ProgressEntry[] @relation("ProgressEntry_projectId")
+  rel_siteDiary_project SiteDiary[] @relation("SiteDiary_projectId")
+  rel_manpowerReport_project ManpowerReport[] @relation("ManpowerReport_projectId")
+  rel_worker_project Worker[] @relation("Worker_projectId")
+  rel_attendanceRecord_project AttendanceRecord[] @relation("AttendanceRecord_projectId")
+  rel_fileObject_project FileObject[] @relation("FileObject_projectId")
+  rel_evidence_project Evidence[] @relation("Evidence_projectId")
+  rel_attachment_project Attachment[] @relation("Attachment_projectId")
+  rel_comment_project Comment[] @relation("Comment_projectId")
+  rel_store_project Store[] @relation("Store_projectId")
+  rel_stockTransaction_project StockTransaction[] @relation("StockTransaction_projectId")
+  rel_materialIssue_project MaterialIssue[] @relation("MaterialIssue_projectId")
+  rel_stockCount_project StockCount[] @relation("StockCount_projectId")
+  rel_materialRequisition_project MaterialRequisition[] @relation("MaterialRequisition_projectId")
+  rel_purchaseRequisition_project PurchaseRequisition[] @relation("PurchaseRequisition_projectId")
+  rel_rfq_project Rfq[] @relation("Rfq_projectId")
+  rel_purchaseOrder_project PurchaseOrder[] @relation("PurchaseOrder_projectId")
+  rel_poRevision_project PoRevision[] @relation("PoRevision_projectId")
+  rel_grn_project Grn[] @relation("Grn_projectId")
+  rel_mir_project Mir[] @relation("Mir_projectId")
+  rel_supplierInvoice_project SupplierInvoice[] @relation("SupplierInvoice_projectId")
+  rel_expense_project Expense[] @relation("Expense_projectId")
+  rel_payment_project Payment[] @relation("Payment_projectId")
+  rel_subcontract_project Subcontract[] @relation("Subcontract_projectId")
+  rel_contractorBill_project ContractorBill[] @relation("ContractorBill_projectId")
+  rel_billingMilestone_project BillingMilestone[] @relation("BillingMilestone_projectId")
+  rel_clientBill_project ClientBill[] @relation("ClientBill_projectId")
+  rel_creditNote_project CreditNote[] @relation("CreditNote_projectId")
+  rel_equipmentLog_project EquipmentLog[] @relation("EquipmentLog_projectId")
+  rel_equipmentMaintenance_project EquipmentMaintenance[] @relation("EquipmentMaintenance_projectId")
+  rel_contract_project Contract[] @relation("Contract_projectId")
+  rel_variation_project Variation[] @relation("Variation_projectId")
+  rel_claim_project Claim[] @relation("Claim_projectId")
+  rel_risk_project Risk[] @relation("Risk_projectId")
+  rel_inspection_project Inspection[] @relation("Inspection_projectId")
+  rel_ncr_project Ncr[] @relation("Ncr_projectId")
+  rel_safetyIncident_project SafetyIncident[] @relation("SafetyIncident_projectId")
+  rel_toolboxTalk_project ToolboxTalk[] @relation("ToolboxTalk_projectId")
+  rel_document_project Document[] @relation("Document_projectId")
+  rel_documentRevision_project DocumentRevision[] @relation("DocumentRevision_projectId")
+  rel_transmittal_project Transmittal[] @relation("Transmittal_projectId")
+  rel_rfi_project Rfi[] @relation("Rfi_projectId")
+  rel_task_project Task[] @relation("Task_projectId")
+  rel_responsibilityAssignment_project ResponsibilityAssignment[] @relation("ResponsibilityAssignment_projectId")
+  rel_workflowDefinition_project WorkflowDefinition[] @relation("WorkflowDefinition_projectId")
+  rel_approvalRequest_project ApprovalRequest[] @relation("ApprovalRequest_projectId")
+  rel_closeout_project Closeout[] @relation("Closeout_projectId")
+}
+
+model WbsNode {
+  id        String   @id @default(cuid())
+  projectId String
+  parentId  String?
+  code      String
+  name      String
+  level     Int      @default(1)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   WbsNode?   @relation("WbsTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children WbsNode[]  @relation("WbsTree")
+  costCodes CostCode[]
+
+  @@unique([projectId, code])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("WbsNode_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_boqItem_wbsNode BoqItem[] @relation("BoqItem_wbsNodeId")
+  rel_activity_wbsNode Activity[] @relation("Activity_wbsNodeId")
+}
+
+model CostCode {
+  id          String   @id @default(cuid())
+  projectId   String
+  wbsNodeId   String?
+  code        String
+  name        String
+  category    String   // LABOUR | MATERIAL | EQUIPMENT | SUBCONTRACT | OVERHEAD | OTHER
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  wbsNode     WbsNode?          @relation(fields: [wbsNodeId], references: [id], onDelete: SetNull)
+  budgetLine  BudgetLine?
+  ledger      CostLedgerEntry[]
+
+  @@unique([projectId, code])
+  @@index([projectId, category])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("CostCode_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_budgetRevisionLine_costCode BudgetRevisionLine[] @relation("BudgetRevisionLine_costCodeId")
+  rel_costForecast_costCode CostForecast[] @relation("CostForecast_costCodeId")
+  rel_boqItem_costCode BoqItem[] @relation("BoqItem_costCodeId")
+  rel_activity_costCode Activity[] @relation("Activity_costCodeId")
+  rel_manpowerLine_costCode ManpowerLine[] @relation("ManpowerLine_costCodeId")
+  rel_stockTransaction_costCode StockTransaction[] @relation("StockTransaction_costCodeId")
+  rel_materialIssue_costCode MaterialIssue[] @relation("MaterialIssue_costCodeId")
+  rel_materialRequisition_costCode MaterialRequisition[] @relation("MaterialRequisition_costCodeId")
+  rel_purchaseRequisition_costCode PurchaseRequisition[] @relation("PurchaseRequisition_costCodeId")
+  rel_purchaseRequisitionLine_costCode PurchaseRequisitionLine[] @relation("PurchaseRequisitionLine_costCodeId")
+  rel_purchaseOrderLine_costCode PurchaseOrderLine[] @relation("PurchaseOrderLine_costCodeId")
+  rel_supplierInvoice_costCode SupplierInvoice[] @relation("SupplierInvoice_costCodeId")
+  rel_supplierInvoiceLine_costCode SupplierInvoiceLine[] @relation("SupplierInvoiceLine_costCodeId")
+  rel_expense_costCode Expense[] @relation("Expense_costCodeId")
+  rel_subcontract_costCode Subcontract[] @relation("Subcontract_costCodeId")
+  rel_equipmentLog_costCode EquipmentLog[] @relation("EquipmentLog_costCodeId")
+  rel_variation_costCode Variation[] @relation("Variation_costCodeId")
+  rel_ncr_costCode Ncr[] @relation("Ncr_costCodeId")
+}
+
+// ───────────────────────────── Budget, ledger, forecast, periods ─────────────────────────────
+
+model BudgetLine {
+  id                String   @id @default(cuid())
+  projectId         String
+  costCodeId        String   @unique
+  originalAmount    Decimal  @default(0) @db.Decimal(18, 2)
+  contingencyAmount Decimal  @default(0) @db.Decimal(18, 2)
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  costCode CostCode @relation(fields: [costCodeId], references: [id], onDelete: Restrict)
+
+  @@index([projectId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("BudgetLine_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+}
+
+/// Budget revision (net increase/decrease) or transfer (lines net to zero). Workflow controlled.
+model BudgetRevision {
+  id           String    @id @default(cuid())
+  projectId    String
+  number       String
+  type         String    // REVISION | TRANSFER
+  title        String
+  reason       String
+  variationId  String?
+  totalDelta   Decimal   @default(0) @db.Decimal(18, 2)
+  status       String    @default("DRAFT")
+  approvedAt   DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  lines BudgetRevisionLine[]
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("BudgetRevision_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("BudgetRevision_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model BudgetRevisionLine {
+  id         String  @id @default(cuid())
+  revisionId String
+  costCodeId String
+  delta      Decimal @db.Decimal(18, 2)
+  remarks    String?
+
+  revision BudgetRevision @relation(fields: [revisionId], references: [id], onDelete: Cascade)
+
+  @@index([costCodeId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  costCode CostCode @relation("BudgetRevisionLine_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+}
+
+enum LedgerKind {
+  COMMITMENT
+  ACCRUAL
+  ACTUAL
+}
+
+/// Append-only cost ledger. Corrections are reversal entries.
+model CostLedgerEntry {
+  id           String     @id @default(cuid())
+  projectId    String
+  costCodeId   String
+  periodId     String?
+  date         DateTime   @db.Date
+  kind         LedgerKind
+  amount       Decimal    @db.Decimal(18, 2)
+  category     String     // copied from cost code at posting
+  sourceType   String     // PO | GRN | SUPPLIER_INVOICE | CONTRACTOR_BILL | EXPENSE | MPR | EQUIPMENT_LOG | SUBCONTRACT | PO_AMENDMENT
+  sourceId     String
+  sourceNumber String?
+  partyId      String?
+  description  String?
+  reversalOfId String?
+  createdById  String?
+  createdAt    DateTime   @default(now())
+
+  costCode CostCode @relation(fields: [costCodeId], references: [id], onDelete: Restrict)
+
+  @@index([projectId, kind])
+  @@index([projectId, costCodeId])
+  @@index([projectId, date])
+  @@index([sourceType, sourceId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("CostLedgerEntry_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  party Party? @relation("CostLedgerEntry_partyId", fields: [partyId], references: [id], onDelete: Restrict)
+  createdBy User? @relation("CostLedgerEntry_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model CostForecast {
+  id            String   @id @default(cuid())
+  projectId     String
+  costCodeId    String
+  periodCode    String   // e.g. 2025-03
+  method        String   // MANUAL | REMAINING_BUDGET | CPI
+  uncommittedEtc Decimal @db.Decimal(18, 2)
+  assumptions   String?
+  eacSnapshot   Decimal? @db.Decimal(18, 2)
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  @@unique([projectId, costCodeId, periodCode])
+  @@index([projectId, periodCode])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("CostForecast_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  costCode CostCode @relation("CostForecast_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  createdBy User @relation("CostForecast_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model ReportingPeriod {
+  id             String    @id @default(cuid())
+  projectId      String
+  code           String    // 2025-03
+  startDate      DateTime  @db.Date
+  endDate        DateTime  @db.Date
+  status         String    @default("OPEN") // OPEN | CLOSING | CLOSED
+  closedById     String?
+  closedAt       DateTime?
+  reviewerId     String?
+  reviewedAt     DateTime?
+  reopenedReason String?
+  varianceNotes  String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  checklist PeriodChecklistItem[]
+
+  @@unique([projectId, code])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("ReportingPeriod_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+}
+
+model PeriodChecklistItem {
+  id          String    @id @default(cuid())
+  periodId    String
+  key         String
+  label       String
+  status      String    @default("PENDING") // PENDING | DONE | WAIVED
+  autoCount   Int?
+  note        String?
+  completedById String?
+  completedAt DateTime?
+
+  period ReportingPeriod @relation(fields: [periodId], references: [id], onDelete: Cascade)
+
+  @@unique([periodId, key])
+}
+
+model CashFlowPlan {
+  id              String   @id @default(cuid())
+  projectId       String
+  month           String   // 2025-03
+  plannedInflow   Decimal  @default(0) @db.Decimal(18, 2)
+  plannedOutflow  Decimal  @default(0) @db.Decimal(18, 2)
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@unique([projectId, month])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("CashFlowPlan_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── BOQ, takeoff, measurement ─────────────────────────────
+
+model BoqItem {
+  id            String   @id @default(cuid())
+  projectId     String
+  boqRef        String?
+  itemCode      String
+  description   String
+  section       String?
+  wbsNodeId     String?
+  costCodeId    String?
+  unit          String
+  estimatedQty  Decimal  @default(0) @db.Decimal(18, 4)
+  contractQty   Decimal  @default(0) @db.Decimal(18, 4)
+  unitRate      Decimal  @default(0) @db.Decimal(18, 4)
+  revisedQty    Decimal? @db.Decimal(18, 4)
+  revisedRate   Decimal? @db.Decimal(18, 4)
+  executedQty   Decimal  @default(0) @db.Decimal(18, 4)
+  verifiedQty   Decimal  @default(0) @db.Decimal(18, 4)
+  certifiedQty  Decimal  @default(0) @db.Decimal(18, 4)
+  isNonBoq      Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  drawingRef    String?
+  specification String?
+  remarks       String?
+  version       Int      @default(1)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  rateAnalysis RateAnalysisLine[]
+
+  @@unique([projectId, itemCode])
+  @@index([projectId, costCodeId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("BoqItem_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  wbsNode WbsNode? @relation("BoqItem_wbsNodeId", fields: [wbsNodeId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("BoqItem_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_quantityTakeoff_boqItem QuantityTakeoff[] @relation("QuantityTakeoff_boqItemId")
+  rel_measurement_boqItem Measurement[] @relation("Measurement_boqItemId")
+  rel_activity_boqItem Activity[] @relation("Activity_boqItemId")
+  rel_subcontractItem_boqItem SubcontractItem[] @relation("SubcontractItem_boqItemId")
+  rel_contractorBillLine_boqItem ContractorBillLine[] @relation("ContractorBillLine_boqItemId")
+  rel_clientBillLine_boqItem ClientBillLine[] @relation("ClientBillLine_boqItemId")
+  rel_variationLine_boqItem VariationLine[] @relation("VariationLine_boqItemId")
+}
+
+model RateAnalysisLine {
+  id          String   @id @default(cuid())
+  boqItemId   String
+  component   String   // LABOUR | MATERIAL | EQUIPMENT | OVERHEAD | PROFIT
+  materialId  String?
+  description String
+  unit        String?
+  coefficient Decimal  @db.Decimal(18, 4) // qty per BOQ unit
+  rate        Decimal  @db.Decimal(18, 4)
+  amount      Decimal  @db.Decimal(18, 2)
+
+  boqItem BoqItem @relation(fields: [boqItemId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  material Material? @relation("RateAnalysisLine_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+}
+
+model QuantityTakeoff {
+  id          String   @id @default(cuid())
+  projectId   String
+  number      String
+  boqItemId   String
+  date        DateTime @db.Date
+  location    String?
+  drawingRef  String?
+  description String?
+  nos         Decimal? @db.Decimal(18, 4)
+  length      Decimal? @db.Decimal(18, 4)
+  width       Decimal? @db.Decimal(18, 4)
+  depth       Decimal? @db.Decimal(18, 4)
+  quantity    Decimal  @db.Decimal(18, 4)
+  formula     String?
+  remarks     String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("QuantityTakeoff_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  boqItem BoqItem @relation("QuantityTakeoff_boqItemId", fields: [boqItemId], references: [id], onDelete: Restrict)
+  createdBy User @relation("QuantityTakeoff_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model Measurement {
+  id                 String    @id @default(cuid())
+  projectId          String
+  number             String
+  type               String    @default("MB") // MB | JMR
+  boqItemId          String
+  contractorId       String?
+  subcontractId      String?
+  activityId         String?
+  location           String?
+  floor              String?
+  grid               String?
+  chainage           String?
+  measuredOn         DateTime  @db.Date
+  nos                Decimal?  @db.Decimal(18, 4)
+  length             Decimal?  @db.Decimal(18, 4)
+  width              Decimal?  @db.Decimal(18, 4)
+  depth              Decimal?  @db.Decimal(18, 4)
+  formula            String?
+  calculatedQty      Decimal   @db.Decimal(18, 4)
+  unit               String
+  drawingRef         String?
+  submittedQty       Decimal   @db.Decimal(18, 4)
+  verifiedQty        Decimal?  @db.Decimal(18, 4)
+  variance           Decimal?  @db.Decimal(18, 4)
+  participants       String[]  @default([])
+  remarks            String?
+  verificationNote   String?
+  duplicateReason    String?
+  status             String    @default("DRAFT")
+  revision           Int       @default(0)
+  submittedById      String?
+  submittedAt        DateTime?
+  verifiedById       String?
+  verifiedAt         DateTime?
+  certifiedById      String?
+  certifiedAt        DateTime?
+  contractorBillId   String?
+  clientBillId       String?
+  createdById        String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  revisions MeasurementRevision[]
+
+  @@unique([projectId, number])
+  @@index([projectId, boqItemId, status])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Measurement_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  boqItem BoqItem @relation("Measurement_boqItemId", fields: [boqItemId], references: [id], onDelete: Restrict)
+  contractor Party? @relation("Measurement_contractorId", fields: [contractorId], references: [id], onDelete: Restrict)
+  subcontract Subcontract? @relation("Measurement_subcontractId", fields: [subcontractId], references: [id], onDelete: Restrict)
+  activity Activity? @relation("Measurement_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+  contractorBill ContractorBill? @relation("Measurement_contractorBillId", fields: [contractorBillId], references: [id], onDelete: Restrict)
+  clientBill ClientBill? @relation("Measurement_clientBillId", fields: [clientBillId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Measurement_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model MeasurementRevision {
+  id            String   @id @default(cuid())
+  measurementId String
+  revision      Int
+  snapshot      Json
+  reason        String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  measurement Measurement @relation(fields: [measurementId], references: [id], onDelete: Cascade)
+
+  @@unique([measurementId, revision])
+
+  // generated foreign keys (scripts/add-relations.py)
+  createdBy User @relation("MeasurementRevision_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Planning, progress, diary, manpower ─────────────────────────────
+
+model Activity {
+  id             String    @id @default(cuid())
+  projectId      String
+  wbsNodeId      String?
+  code           String
+  name           String
+  boqItemId      String?
+  costCodeId     String?
+  unit           String?
+  plannedQty     Decimal?  @db.Decimal(18, 4)
+  executedQty    Decimal   @default(0) @db.Decimal(18, 4)
+  percentComplete Decimal  @default(0) @db.Decimal(7, 4)
+  weight         Decimal   @default(1) @db.Decimal(18, 4)
+  baselineStart  DateTime? @db.Date
+  baselineFinish DateTime? @db.Date
+  plannedStart   DateTime? @db.Date
+  plannedFinish  DateTime? @db.Date
+  actualStart    DateTime? @db.Date
+  actualFinish   DateTime? @db.Date
+  isMilestone    Boolean   @default(false)
+  isHandover     Boolean   @default(false)
+  responsibleId  String?
+  status         String    @default("NOT_STARTED") // NOT_STARTED | IN_PROGRESS | COMPLETED | ON_HOLD | DELAYED
+  delayReason    String?
+  delayParty     String?
+  delayCost      Decimal?  @db.Decimal(18, 2)
+  sortOrder      Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  predecessors ActivityDependency[] @relation("Succ")
+  successors   ActivityDependency[] @relation("Pred")
+
+  @@unique([projectId, code])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Activity_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  wbsNode WbsNode? @relation("Activity_wbsNodeId", fields: [wbsNodeId], references: [id], onDelete: Restrict)
+  boqItem BoqItem? @relation("Activity_boqItemId", fields: [boqItemId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("Activity_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_measurement_activity Measurement[] @relation("Measurement_activityId")
+  rel_progressEntry_activity ProgressEntry[] @relation("ProgressEntry_activityId")
+  rel_manpowerLine_activity ManpowerLine[] @relation("ManpowerLine_activityId")
+  rel_evidence_activity Evidence[] @relation("Evidence_activityId")
+  rel_stockTransaction_activity StockTransaction[] @relation("StockTransaction_activityId")
+  rel_materialIssue_activity MaterialIssue[] @relation("MaterialIssue_activityId")
+  rel_equipmentLog_activity EquipmentLog[] @relation("EquipmentLog_activityId")
+  rel_inspection_activity Inspection[] @relation("Inspection_activityId")
+  rel_ncr_activity Ncr[] @relation("Ncr_activityId")
+}
+
+model ActivityDependency {
+  id            String @id @default(cuid())
+  predecessorId String
+  successorId   String
+  type          String @default("FS")
+  lagDays       Int    @default(0)
+
+  predecessor Activity @relation("Pred", fields: [predecessorId], references: [id], onDelete: Cascade)
+  successor   Activity @relation("Succ", fields: [successorId], references: [id], onDelete: Cascade)
+
+  @@unique([predecessorId, successorId])
+}
+
+model ProgressEntry {
+  id              String   @id @default(cuid())
+  projectId       String
+  activityId      String
+  date            DateTime @db.Date
+  qtyDone         Decimal  @default(0) @db.Decimal(18, 4)
+  percentComplete Decimal? @db.Decimal(7, 4)
+  remarks         String?
+  delayReason     String?
+  responsibleParty String?
+  siteDiaryId     String?
+  enteredById     String
+  createdAt       DateTime @default(now())
+
+  @@index([projectId, date])
+  @@index([activityId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("ProgressEntry_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  activity Activity @relation("ProgressEntry_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+}
+
+model SiteDiary {
+  id                 String    @id @default(cuid())
+  projectId          String
+  number             String
+  date               DateTime  @db.Date
+  shift              String    @default("DAY")
+  weather            String?
+  workingHours       String?
+  location           String?
+  activitiesPerformed String?
+  workStoppages      String?
+  delays             String?
+  safetyObservations String?
+  qualityObservations String?
+  instructions       String?
+  visitors           String?
+  remarks            String?
+  nextDayPlan        String?
+  status             String    @default("DRAFT")
+  submittedById      String?
+  reviewedById       String?
+  approvedById       String?
+  lockedAt           DateTime?
+  createdById        String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([projectId, number])
+  @@unique([projectId, date, shift])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("SiteDiary_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("SiteDiary_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model ManpowerReport {
+  id            String    @id @default(cuid())
+  projectId     String
+  number        String
+  date          DateTime  @db.Date
+  shift         String    @default("DAY")
+  contractorId  String?
+  contractorKey String    // contractorId or "OWN" — enforces uniqueness
+  remarks       String?
+  totalWorkers  Int       @default(0)
+  totalCost     Decimal   @default(0) @db.Decimal(18, 2)
+  status        String    @default("DRAFT")
+  submittedById String?
+  verifiedById  String?
+  verifiedAt    DateTime?
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  lines ManpowerLine[]
+
+  @@unique([projectId, number])
+  @@unique([projectId, date, shift, contractorKey])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("ManpowerReport_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  contractor Party? @relation("ManpowerReport_contractorId", fields: [contractorId], references: [id], onDelete: Restrict)
+  createdBy User @relation("ManpowerReport_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model ManpowerLine {
+  id            String   @id @default(cuid())
+  reportId      String
+  trade         String
+  category      String   @default("SKILLED") // SKILLED | SEMI_SKILLED | UNSKILLED | SUPERVISOR | STAFF
+  plannedCount  Int      @default(0)
+  actualCount   Int      @default(0)
+  regularHours  Decimal  @default(8) @db.Decimal(9, 2)
+  overtimeHours Decimal  @default(0) @db.Decimal(9, 2)
+  hourlyRate    Decimal  @default(0) @db.Decimal(18, 4)
+  overtimeRate  Decimal  @default(0) @db.Decimal(18, 4)
+  amount        Decimal  @default(0) @db.Decimal(18, 2)
+  chargeable    Boolean  @default(true)
+  location      String?
+  activityId    String?
+  costCodeId    String?
+  supervisor    String?
+  remarks       String?
+
+  report ManpowerReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  activity Activity? @relation("ManpowerLine_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("ManpowerLine_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+}
+
+model Worker {
+  id           String   @id @default(cuid())
+  projectId    String
+  contractorId String?
+  workerCode   String
+  name         String
+  trade        String
+  category     String   @default("SKILLED")
+  hourlyRate   Decimal  @default(0) @db.Decimal(18, 4)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  attendance AttendanceRecord[]
+
+  @@unique([projectId, workerCode])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Worker_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  contractor Party? @relation("Worker_contractorId", fields: [contractorId], references: [id], onDelete: Restrict)
+}
+
+model AttendanceRecord {
+  id               String   @id @default(cuid())
+  projectId        String
+  workerId         String
+  date             DateTime @db.Date
+  shift            String   @default("DAY")
+  status           String   // PRESENT | ABSENT | HALF_DAY | LEAVE
+  regularHours     Decimal  @default(0) @db.Decimal(9, 2)
+  overtimeHours    Decimal  @default(0) @db.Decimal(9, 2)
+  correctionReason String?
+  correctedById    String?
+  createdById      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  worker Worker @relation(fields: [workerId], references: [id], onDelete: Restrict)
+
+  @@unique([workerId, date, shift])
+  @@index([projectId, date])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("AttendanceRecord_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("AttendanceRecord_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Files, evidence, attachments, comments ─────────────────────────────
+
+model FileObject {
+  id           String   @id @default(cuid())
+  orgId        String
+  projectId    String?
+  storageKey   String   @unique
+  originalName String
+  mimeType     String
+  size         Int
+  sha256       String
+  uploadedById String
+  uploadedAt   DateTime @default(now())
+  /// Client-reported metadata (capture time, GPS) — stored as unverified claims.
+  clientMeta   Json     @default("{}")
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@index([projectId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project? @relation("FileObject_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  uploadedBy User @relation("FileObject_uploadedById", fields: [uploadedById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_evidence_file Evidence[] @relation("Evidence_fileId")
+  rel_attachment_file Attachment[] @relation("Attachment_fileId")
+  rel_quotation_file Quotation[] @relation("Quotation_fileId")
+  rel_documentRevision_file DocumentRevision[] @relation("DocumentRevision_fileId")
+}
+
+model Evidence {
+  id            String    @id @default(cuid())
+  projectId     String
+  number        String
+  fileId        String
+  category      String    // MANPOWER | MEASUREMENT | WORK_COMPLETION | MATERIAL_RECEIPT | MATERIAL_DAMAGE | EQUIPMENT | QUALITY | SAFETY | GENERAL
+  caption       String?
+  location      String?
+  activityId    String?
+  phase         String    @default("NA") // BEFORE | AFTER | NA
+  pairKey       String?
+  linkedType    String?
+  linkedId      String?
+  claimedTakenAt DateTime?
+  status        String    @default("PENDING")
+  reviewComment String?
+  submittedById String
+  verifiedById  String?
+  verifiedAt    DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@index([projectId, category])
+  @@index([linkedType, linkedId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Evidence_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  file FileObject @relation("Evidence_fileId", fields: [fileId], references: [id], onDelete: Restrict)
+  activity Activity? @relation("Evidence_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+}
+
+model Attachment {
+  id           String   @id @default(cuid())
+  projectId    String?
+  entityType   String
+  entityId     String
+  fileId       String
+  label        String?
+  uploadedById String
+  createdAt    DateTime @default(now())
+
+  @@index([entityType, entityId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project? @relation("Attachment_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  file FileObject @relation("Attachment_fileId", fields: [fileId], references: [id], onDelete: Restrict)
+  uploadedBy User @relation("Attachment_uploadedById", fields: [uploadedById], references: [id], onDelete: Restrict)
+}
+
+model Comment {
+  id         String   @id @default(cuid())
+  projectId  String?
+  entityType String
+  entityId   String
+  authorId   String
+  body       String
+  mentions   String[] @default([])
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project? @relation("Comment_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Materials, stores, stock ─────────────────────────────
+
+model Uom {
+  id        String @id @default(cuid())
+  orgId     String
+  code      String
+  name      String
+  dimension String @default("COUNT") // COUNT | LENGTH | AREA | VOLUME | WEIGHT | TIME | LUMPSUM
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, code])
+}
+
+model Material {
+  id            String   @id @default(cuid())
+  orgId         String
+  code          String
+  name          String
+  category      String
+  unit          String
+  specification String?
+  reorderLevel  Decimal? @db.Decimal(18, 4)
+  standardRate  Decimal? @db.Decimal(18, 4)
+  batchTracked  Boolean  @default(false)
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, code])
+
+  // generated back-relations
+  rel_rateAnalysisLine_material RateAnalysisLine[] @relation("RateAnalysisLine_materialId")
+  rel_stockTransaction_material StockTransaction[] @relation("StockTransaction_materialId")
+  rel_materialIssueLine_material MaterialIssueLine[] @relation("MaterialIssueLine_materialId")
+  rel_stockCountLine_material StockCountLine[] @relation("StockCountLine_materialId")
+  rel_materialRequisitionLine_material MaterialRequisitionLine[] @relation("MaterialRequisitionLine_materialId")
+  rel_purchaseRequisitionLine_material PurchaseRequisitionLine[] @relation("PurchaseRequisitionLine_materialId")
+  rel_quotationLine_material QuotationLine[] @relation("QuotationLine_materialId")
+  rel_purchaseOrderLine_material PurchaseOrderLine[] @relation("PurchaseOrderLine_materialId")
+  rel_grnLine_material GrnLine[] @relation("GrnLine_materialId")
+  rel_mir_material Mir[] @relation("Mir_materialId")
+}
+
+model Store {
+  id        String   @id @default(cuid())
+  projectId String
+  code      String
+  name      String
+  location  String?
+  keeperId  String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, code])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Store_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_stockTransaction_store StockTransaction[] @relation("StockTransaction_storeId")
+  rel_materialIssue_store MaterialIssue[] @relation("MaterialIssue_storeId")
+  rel_materialIssue_toStore MaterialIssue[] @relation("MaterialIssue_toStoreId")
+  rel_stockCount_store StockCount[] @relation("StockCount_storeId")
+  rel_grn_store Grn[] @relation("Grn_storeId")
+}
+
+enum StockTxnType {
+  OPENING
+  RECEIPT
+  ISSUE
+  RETURN_TO_STORE
+  TRANSFER_OUT
+  TRANSFER_IN
+  RETURN_TO_SUPPLIER
+  WASTAGE
+  DAMAGE
+  ADJUSTMENT
+  REVERSAL
+}
+
+/// Append-only stock ledger. qty is signed (+ in, − out). value is signed.
+model StockTransaction {
+  id           String       @id @default(cuid())
+  projectId    String
+  storeId      String
+  materialId   String
+  date         DateTime     @db.Date
+  type         StockTxnType
+  qty          Decimal      @db.Decimal(18, 4)
+  unitCost     Decimal      @db.Decimal(18, 4)
+  value        Decimal      @db.Decimal(18, 2)
+  batchNo      String?
+  refType      String?
+  refId        String?
+  refNumber    String?
+  costCodeId   String?
+  activityId   String?
+  reason       String?
+  reversalOfId String?
+  createdById  String
+  createdAt    DateTime     @default(now())
+
+  @@index([projectId, storeId, materialId])
+  @@index([refType, refId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("StockTransaction_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  store Store @relation("StockTransaction_storeId", fields: [storeId], references: [id], onDelete: Restrict)
+  material Material @relation("StockTransaction_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("StockTransaction_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  activity Activity? @relation("StockTransaction_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+  createdBy User @relation("StockTransaction_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model MaterialIssue {
+  id           String    @id @default(cuid())
+  projectId    String
+  number       String
+  type         String    @default("ISSUE") // ISSUE | RETURN_TO_STORE | WASTAGE | DAMAGE | TRANSFER | ADJUSTMENT
+  storeId      String
+  toStoreId    String?
+  date         DateTime  @db.Date
+  contractorId String?
+  activityId   String?
+  costCodeId   String?
+  purpose      String?
+  reason       String?
+  totalValue   Decimal   @default(0) @db.Decimal(18, 2)
+  status       String    @default("DRAFT")
+  postedAt     DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  lines MaterialIssueLine[]
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("MaterialIssue_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  store Store @relation("MaterialIssue_storeId", fields: [storeId], references: [id], onDelete: Restrict)
+  toStore Store? @relation("MaterialIssue_toStoreId", fields: [toStoreId], references: [id], onDelete: Restrict)
+  contractor Party? @relation("MaterialIssue_contractorId", fields: [contractorId], references: [id], onDelete: Restrict)
+  activity Activity? @relation("MaterialIssue_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("MaterialIssue_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  createdBy User @relation("MaterialIssue_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model MaterialIssueLine {
+  id         String  @id @default(cuid())
+  issueId    String
+  materialId String
+  qty        Decimal @db.Decimal(18, 4)
+  batchNo    String?
+  unitCost   Decimal @default(0) @db.Decimal(18, 4)
+  amount     Decimal @default(0) @db.Decimal(18, 2)
+  remarks    String?
+
+  issue MaterialIssue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  material Material @relation("MaterialIssueLine_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+}
+
+model StockCount {
+  id          String    @id @default(cuid())
+  projectId   String
+  number      String
+  storeId     String
+  countDate   DateTime  @db.Date
+  status      String    @default("DRAFT") // DRAFT | POSTED
+  remarks     String?
+  postedAt    DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  lines StockCountLine[]
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("StockCount_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  store Store @relation("StockCount_storeId", fields: [storeId], references: [id], onDelete: Restrict)
+  createdBy User @relation("StockCount_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model StockCountLine {
+  id          String  @id @default(cuid())
+  countId     String
+  materialId  String
+  systemQty   Decimal @db.Decimal(18, 4)
+  countedQty  Decimal @db.Decimal(18, 4)
+  varianceQty Decimal @db.Decimal(18, 4)
+  remarks     String?
+
+  count StockCount @relation(fields: [countId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  material Material @relation("StockCountLine_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Procurement ─────────────────────────────
+
+model MaterialRequisition {
+  id               String    @id @default(cuid())
+  projectId        String
+  number           String
+  department       String?
+  requiredBy       DateTime  @db.Date
+  deliveryLocation String?
+  justification    String?
+  costCodeId       String?
+  priority         String    @default("MEDIUM")
+  status           String    @default("DRAFT")
+  requestedById    String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  lines MaterialRequisitionLine[]
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("MaterialRequisition_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("MaterialRequisition_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  requestedBy User @relation("MaterialRequisition_requestedById", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_purchaseRequisition_mr PurchaseRequisition[] @relation("PurchaseRequisition_mrId")
+}
+
+model MaterialRequisitionLine {
+  id             String   @id @default(cuid())
+  mrId           String
+  materialId     String
+  specification  String?
+  qty            Decimal  @db.Decimal(18, 4)
+  unit           String
+  stockAvailable Decimal? @db.Decimal(18, 4)
+  remarks        String?
+
+  mr MaterialRequisition @relation(fields: [mrId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  material Material @relation("MaterialRequisitionLine_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+}
+
+model PurchaseRequisition {
+  id            String    @id @default(cuid())
+  projectId     String
+  number        String
+  mrId          String?
+  requiredBy    DateTime  @db.Date
+  costCodeId    String?
+  justification String?
+  estimatedTotal Decimal  @default(0) @db.Decimal(18, 2)
+  budgetCheck   Json?
+  status        String    @default("DRAFT")
+  requestedById String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  lines PurchaseRequisitionLine[]
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("PurchaseRequisition_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  mr MaterialRequisition? @relation("PurchaseRequisition_mrId", fields: [mrId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("PurchaseRequisition_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  requestedBy User @relation("PurchaseRequisition_requestedById", fields: [requestedById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_rfq_pr Rfq[] @relation("Rfq_prId")
+  rel_purchaseOrder_pr PurchaseOrder[] @relation("PurchaseOrder_prId")
+}
+
+model PurchaseRequisitionLine {
+  id                  String   @id @default(cuid())
+  prId                String
+  materialId          String
+  description         String?
+  qty                 Decimal  @db.Decimal(18, 4)
+  unit                String
+  estimatedRate       Decimal  @db.Decimal(18, 4)
+  amount              Decimal  @db.Decimal(18, 2)
+  costCodeId          String
+  suggestedSupplierId String?
+
+  pr PurchaseRequisition @relation(fields: [prId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  material Material @relation("PurchaseRequisitionLine_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+  costCode CostCode @relation("PurchaseRequisitionLine_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+}
+
+model Rfq {
+  id                     String    @id @default(cuid())
+  projectId              String
+  number                 String
+  prId                   String
+  title                  String
+  dueDate                DateTime  @db.Date
+  status                 String    @default("OPEN") // OPEN | EVALUATION | AWARDED | CANCELLED
+  supplierIds            String[]  @default([])
+  selectedQuotationId    String?
+  selectionJustification String?
+  createdById            String
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  quotations Quotation[]
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Rfq_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  pr PurchaseRequisition @relation("Rfq_prId", fields: [prId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Rfq_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model Quotation {
+  id                  String   @id @default(cuid())
+  rfqId               String
+  supplierId          String
+  quoteRef            String?
+  quotedAt            DateTime @db.Date
+  deliveryDays        Int?
+  paymentTerms        String?
+  validityDays        Int?
+  taxRate             Decimal  @default(0) @db.Decimal(9, 6)
+  subtotal            Decimal  @default(0) @db.Decimal(18, 2)
+  taxAmount           Decimal  @default(0) @db.Decimal(18, 2)
+  total               Decimal  @default(0) @db.Decimal(18, 2)
+  technicalScore      Decimal? @db.Decimal(5, 2)
+  technicallyAccepted Boolean  @default(true)
+  remarks             String?
+  fileId              String?
+  createdAt           DateTime @default(now())
+
+  rfq   Rfq             @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  lines QuotationLine[]
+
+  @@unique([rfqId, supplierId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  supplier Party @relation("Quotation_supplierId", fields: [supplierId], references: [id], onDelete: Restrict)
+  file FileObject? @relation("Quotation_fileId", fields: [fileId], references: [id], onDelete: Restrict)
+}
+
+model QuotationLine {
+  id          String  @id @default(cuid())
+  quotationId String
+  prLineId    String
+  materialId  String
+  qty         Decimal @db.Decimal(18, 4)
+  rate        Decimal @db.Decimal(18, 4)
+  amount      Decimal @db.Decimal(18, 2)
+
+  quotation Quotation @relation(fields: [quotationId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  material Material @relation("QuotationLine_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+}
+
+model PurchaseOrder {
+  id              String    @id @default(cuid())
+  projectId       String
+  number          String
+  revision        Int       @default(0)
+  supplierId      String
+  prId            String?
+  rfqId           String?
+  quotationId     String?
+  orderDate       DateTime  @db.Date
+  deliveryDate    DateTime? @db.Date
+  deliveryAddress String?
+  paymentTerms    String?
+  currency        String    @default("INR")
+  terms           String?
+  subtotal        Decimal   @default(0) @db.Decimal(18, 2)
+  discount        Decimal   @default(0) @db.Decimal(18, 2)
+  netAmount       Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount       Decimal   @default(0) @db.Decimal(18, 2)
+  total           Decimal   @default(0) @db.Decimal(18, 2)
+  budgetCheck     Json?
+  status          String    @default("DRAFT")
+  approvedAt      DateTime?
+  closedReason    String?
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  lines     PurchaseOrderLine[]
+  revisions PoRevision[]
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@index([supplierId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("PurchaseOrder_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  supplier Party @relation("PurchaseOrder_supplierId", fields: [supplierId], references: [id], onDelete: Restrict)
+  pr PurchaseRequisition? @relation("PurchaseOrder_prId", fields: [prId], references: [id], onDelete: Restrict)
+  createdBy User @relation("PurchaseOrder_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_grn_po Grn[] @relation("Grn_poId")
+  rel_supplierInvoice_po SupplierInvoice[] @relation("SupplierInvoice_poId")
+  rel_expense_po Expense[] @relation("Expense_poId")
+}
+
+model PurchaseOrderLine {
+  id           String  @id @default(cuid())
+  poId         String
+  lineNo       Int
+  materialId   String?
+  description  String
+  qty          Decimal @db.Decimal(18, 4)
+  unit         String
+  rate         Decimal @db.Decimal(18, 4)
+  discountPct  Decimal @default(0) @db.Decimal(9, 6)
+  taxRate      Decimal @default(0) @db.Decimal(9, 6)
+  amount       Decimal @db.Decimal(18, 2) // net of discount, excl. tax
+  taxAmount    Decimal @db.Decimal(18, 2)
+  costCodeId   String
+  prLineId     String?
+  receivedQty  Decimal @default(0) @db.Decimal(18, 4)
+  invoicedQty  Decimal @default(0) @db.Decimal(18, 4)
+
+  po PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+
+  @@unique([poId, lineNo])
+
+  // generated foreign keys (scripts/add-relations.py)
+  material Material? @relation("PurchaseOrderLine_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+  costCode CostCode @relation("PurchaseOrderLine_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_grnLine_poLine GrnLine[] @relation("GrnLine_poLineId")
+  rel_supplierInvoiceLine_poLine SupplierInvoiceLine[] @relation("SupplierInvoiceLine_poLineId")
+}
+
+/// PO amendment history. Snapshot of the PO before the amendment plus the proposed changes.
+model PoRevision {
+  id          String    @id @default(cuid())
+  poId        String
+  projectId   String
+  number      String
+  revisionNo  Int
+  reason      String
+  before      Json
+  proposed    Json
+  status      String    @default("DRAFT")
+  approvedAt  DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+
+  po PurchaseOrder @relation(fields: [poId], references: [id], onDelete: Cascade)
+
+  @@unique([poId, revisionNo])
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("PoRevision_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("PoRevision_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model Grn {
+  id               String    @id @default(cuid())
+  projectId        String
+  number           String
+  poId             String
+  supplierId       String
+  storeId          String
+  receivedDate     DateTime  @db.Date
+  deliveryNoteNo   String?
+  vehicleNo        String?
+  inspectionStatus String    @default("NOT_REQUIRED") // NOT_REQUIRED | PENDING | PASSED | FAILED
+  remarks          String?
+  acceptedValue    Decimal   @default(0) @db.Decimal(18, 2)
+  status           String    @default("DRAFT")
+  receivedById     String
+  verifiedById     String?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  lines GrnLine[]
+
+  @@unique([projectId, number])
+  @@index([poId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Grn_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  po PurchaseOrder @relation("Grn_poId", fields: [poId], references: [id], onDelete: Restrict)
+  supplier Party @relation("Grn_supplierId", fields: [supplierId], references: [id], onDelete: Restrict)
+  store Store @relation("Grn_storeId", fields: [storeId], references: [id], onDelete: Restrict)
+  receivedBy User @relation("Grn_receivedById", fields: [receivedById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_mir_grn Mir[] @relation("Mir_grnId")
+  rel_expense_grn Expense[] @relation("Expense_grnId")
+}
+
+model GrnLine {
+  id              String  @id @default(cuid())
+  grnId           String
+  poLineId        String
+  materialId      String?
+  receivedQty     Decimal @db.Decimal(18, 4)
+  acceptedQty     Decimal @db.Decimal(18, 4)
+  rejectedQty     Decimal @default(0) @db.Decimal(18, 4)
+  rate            Decimal @default(0) @db.Decimal(18, 4)
+  amount          Decimal @default(0) @db.Decimal(18, 2)
+  invoicedQty     Decimal @default(0) @db.Decimal(18, 4)
+  batchNo         String?
+  rejectionReason String?
+
+  grn Grn @relation(fields: [grnId], references: [id], onDelete: Cascade)
+
+  @@index([poLineId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  poLine PurchaseOrderLine @relation("GrnLine_poLineId", fields: [poLineId], references: [id], onDelete: Restrict)
+  material Material? @relation("GrnLine_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+}
+
+model Mir {
+  id                String    @id @default(cuid())
+  projectId         String
+  number            String
+  grnId             String?
+  materialId        String?
+  specification     String?
+  documentsRequired String?
+  documentsReceived String?
+  result            String    @default("PENDING") // PENDING | ACCEPTED | CONDITIONAL | REJECTED
+  defects           String?
+  correctiveAction  String?
+  inspectorId       String?
+  inspectedOn       DateTime? @db.Date
+  status            String    @default("DRAFT")
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Mir_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  grn Grn? @relation("Mir_grnId", fields: [grnId], references: [id], onDelete: Restrict)
+  material Material? @relation("Mir_materialId", fields: [materialId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Mir_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Payables, expenses, payments ─────────────────────────────
+
+model SupplierInvoice {
+  id          String    @id @default(cuid())
+  projectId   String
+  number      String
+  supplierId  String
+  invoiceNo   String
+  invoiceDate DateTime  @db.Date
+  dueDate     DateTime? @db.Date
+  poId        String?
+  costCodeId  String?
+  description String?
+  subtotal    Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount   Decimal   @default(0) @db.Decimal(18, 2)
+  total       Decimal   @default(0) @db.Decimal(18, 2)
+  paidAmount  Decimal   @default(0) @db.Decimal(18, 2)
+  matchResult Json?
+  duplicateWarning String?
+  status      String    @default("DRAFT")
+  approvedAt  DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  lines SupplierInvoiceLine[]
+
+  @@unique([projectId, number])
+  @@unique([supplierId, invoiceNo])
+  @@index([projectId, status])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("SupplierInvoice_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  supplier Party @relation("SupplierInvoice_supplierId", fields: [supplierId], references: [id], onDelete: Restrict)
+  po PurchaseOrder? @relation("SupplierInvoice_poId", fields: [poId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("SupplierInvoice_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  createdBy User @relation("SupplierInvoice_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_paymentAllocation_supplierInvoice PaymentAllocation[] @relation("PaymentAllocation_supplierInvoiceId")
+}
+
+model SupplierInvoiceLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  poLineId    String?
+  description String
+  qty         Decimal @db.Decimal(18, 4)
+  rate        Decimal @db.Decimal(18, 4)
+  taxRate     Decimal @default(0) @db.Decimal(9, 6)
+  amount      Decimal @db.Decimal(18, 2)
+  taxAmount   Decimal @db.Decimal(18, 2)
+  costCodeId  String
+
+  invoice SupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  poLine PurchaseOrderLine? @relation("SupplierInvoiceLine_poLineId", fields: [poLineId], references: [id], onDelete: Restrict)
+  costCode CostCode @relation("SupplierInvoiceLine_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+}
+
+model Expense {
+  id              String    @id @default(cuid())
+  projectId       String
+  number          String
+  date            DateTime  @db.Date
+  category        String
+  costCodeId      String
+  payeeId         String?
+  payeeName       String?
+  description     String
+  quantity        Decimal?  @db.Decimal(18, 4)
+  unitRate        Decimal?  @db.Decimal(18, 4)
+  amountBeforeTax Decimal   @db.Decimal(18, 2)
+  taxRate         Decimal   @default(0) @db.Decimal(9, 6)
+  taxAmount       Decimal   @default(0) @db.Decimal(18, 2)
+  total           Decimal   @default(0) @db.Decimal(18, 2)
+  currency        String    @default("INR")
+  poId            String?
+  invoiceId       String?
+  grnId           String?
+  ncrId           String?
+  externalRef     String?
+  accountingRef   String?
+  paymentStatus   String    @default("UNPAID") // UNPAID | PARTIALLY_PAID | PAID
+  status          String    @default("DRAFT")
+  approvedAt      DateTime?
+  createdById     String
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Expense_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  costCode CostCode @relation("Expense_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  payee Party? @relation("Expense_payeeId", fields: [payeeId], references: [id], onDelete: Restrict)
+  po PurchaseOrder? @relation("Expense_poId", fields: [poId], references: [id], onDelete: Restrict)
+  grn Grn? @relation("Expense_grnId", fields: [grnId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Expense_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model Payment {
+  id          String    @id @default(cuid())
+  projectId   String
+  number      String
+  direction   String    // OUT (to supplier/contractor) | IN (from client)
+  partyId     String
+  date        DateTime  @db.Date
+  method      String    @default("BANK_TRANSFER")
+  reference   String?
+  amount      Decimal   @db.Decimal(18, 2)
+  remarks     String?
+  status      String    @default("DRAFT")
+  approvedAt  DateTime?
+  createdById String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  allocations PaymentAllocation[]
+
+  @@unique([projectId, number])
+  @@index([projectId, direction, status])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Payment_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  party Party @relation("Payment_partyId", fields: [partyId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Payment_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model PaymentAllocation {
+  id               String  @id @default(cuid())
+  paymentId        String
+  supplierInvoiceId String?
+  contractorBillId String?
+  clientBillId     String?
+  expenseId        String?
+  retentionRelease Boolean @default(false)
+  amount           Decimal @db.Decimal(18, 2)
+
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+
+  @@index([supplierInvoiceId])
+  @@index([contractorBillId])
+  @@index([clientBillId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  supplierInvoice SupplierInvoice? @relation("PaymentAllocation_supplierInvoiceId", fields: [supplierInvoiceId], references: [id], onDelete: Restrict)
+  contractorBill ContractorBill? @relation("PaymentAllocation_contractorBillId", fields: [contractorBillId], references: [id], onDelete: Restrict)
+  clientBill ClientBill? @relation("PaymentAllocation_clientBillId", fields: [clientBillId], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Subcontracts & billing ─────────────────────────────
+
+model Subcontract {
+  id                 String    @id @default(cuid())
+  projectId          String
+  number             String
+  contractorId       String
+  contractId         String?
+  title              String
+  scope              String?
+  startDate          DateTime? @db.Date
+  endDate            DateTime? @db.Date
+  costCodeId         String
+  contractValue      Decimal   @default(0) @db.Decimal(18, 2)
+  retentionPct       Decimal   @default(0.05) @db.Decimal(9, 6)
+  retentionCapPct    Decimal?  @db.Decimal(9, 6)
+  advanceAmount      Decimal   @default(0) @db.Decimal(18, 2)
+  advanceRecoveryPct Decimal   @default(0) @db.Decimal(9, 6)
+  taxRate            Decimal   @default(0.18) @db.Decimal(9, 6)
+  paymentTermsDays   Int       @default(30)
+  insuranceExpiry    DateTime? @db.Date
+  complianceNotes    String?
+  status             String    @default("DRAFT")
+  approvedAt         DateTime?
+  createdById        String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  items SubcontractItem[]
+
+  @@unique([projectId, number])
+  @@index([contractorId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Subcontract_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  contractor Party @relation("Subcontract_contractorId", fields: [contractorId], references: [id], onDelete: Restrict)
+  contract Contract? @relation("Subcontract_contractId", fields: [contractId], references: [id], onDelete: Restrict)
+  costCode CostCode @relation("Subcontract_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Subcontract_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_measurement_subcontract Measurement[] @relation("Measurement_subcontractId")
+  rel_contractorBill_subcontract ContractorBill[] @relation("ContractorBill_subcontractId")
+}
+
+model SubcontractItem {
+  id            String  @id @default(cuid())
+  subcontractId String
+  boqItemId     String?
+  description   String
+  unit          String
+  qty           Decimal @db.Decimal(18, 4)
+  rate          Decimal @db.Decimal(18, 4)
+  amount        Decimal @db.Decimal(18, 2)
+
+  subcontract Subcontract @relation(fields: [subcontractId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  boqItem BoqItem? @relation("SubcontractItem_boqItemId", fields: [boqItemId], references: [id], onDelete: Restrict)
+}
+
+model ContractorBill {
+  id                String    @id @default(cuid())
+  projectId         String
+  number            String
+  subcontractId     String
+  contractorId      String
+  billSeq           Int
+  periodFrom        DateTime  @db.Date
+  periodTo          DateTime  @db.Date
+  grossToDate       Decimal   @default(0) @db.Decimal(18, 2)
+  previousGross     Decimal   @default(0) @db.Decimal(18, 2)
+  currentWorkValue  Decimal   @default(0) @db.Decimal(18, 2)
+  variationValue    Decimal   @default(0) @db.Decimal(18, 2)
+  retention         Decimal   @default(0) @db.Decimal(18, 2)
+  advanceRecovery   Decimal   @default(0) @db.Decimal(18, 2)
+  otherDeductions   Decimal   @default(0) @db.Decimal(18, 2)
+  deductionNotes    String?
+  taxAmount         Decimal   @default(0) @db.Decimal(18, 2)
+  netPayable        Decimal   @default(0) @db.Decimal(18, 2)
+  paidAmount        Decimal   @default(0) @db.Decimal(18, 2)
+  contractorInvoiceNo String?
+  dueDate           DateTime? @db.Date
+  status            String    @default("DRAFT")
+  certifiedById     String?
+  certifiedAt       DateTime?
+  createdById       String
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  lines ContractorBillLine[]
+
+  @@unique([projectId, number])
+  @@unique([subcontractId, billSeq])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("ContractorBill_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  subcontract Subcontract @relation("ContractorBill_subcontractId", fields: [subcontractId], references: [id], onDelete: Restrict)
+  contractor Party @relation("ContractorBill_contractorId", fields: [contractorId], references: [id], onDelete: Restrict)
+  createdBy User @relation("ContractorBill_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_measurement_contractorBill Measurement[] @relation("Measurement_contractorBillId")
+  rel_paymentAllocation_contractorBill PaymentAllocation[] @relation("PaymentAllocation_contractorBillId")
+}
+
+model ContractorBillLine {
+  id                String  @id @default(cuid())
+  billId            String
+  subcontractItemId String?
+  boqItemId         String?
+  description       String
+  unit              String
+  rate              Decimal @db.Decimal(18, 4)
+  previousQty       Decimal @db.Decimal(18, 4)
+  currentQty        Decimal @db.Decimal(18, 4)
+  cumulativeQty     Decimal @db.Decimal(18, 4)
+  currentAmount     Decimal @db.Decimal(18, 2)
+  cumulativeAmount  Decimal @db.Decimal(18, 2)
+  measurementIds    String[] @default([])
+
+  bill ContractorBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  boqItem BoqItem? @relation("ContractorBillLine_boqItemId", fields: [boqItemId], references: [id], onDelete: Restrict)
+}
+
+model BillingMilestone {
+  id        String    @id @default(cuid())
+  projectId String
+  name      String
+  dueDate   DateTime? @db.Date
+  amount    Decimal   @db.Decimal(18, 2)
+  status    String    @default("PLANNED") // PLANNED | ACHIEVED | BILLED | PAID
+  notes     String?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([projectId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("BillingMilestone_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_clientBill_milestone ClientBill[] @relation("ClientBill_milestoneId")
+}
+
+model ClientBill {
+  id               String    @id @default(cuid())
+  projectId        String
+  number           String
+  billSeq          Int
+  type             String    @default("RA") // RA | MILESTONE | FINAL
+  milestoneId      String?
+  periodFrom       DateTime  @db.Date
+  periodTo         DateTime  @db.Date
+  grossToDate      Decimal   @default(0) @db.Decimal(18, 2)
+  previousGross    Decimal   @default(0) @db.Decimal(18, 2)
+  currentWorkValue Decimal   @default(0) @db.Decimal(18, 2)
+  variationValue   Decimal   @default(0) @db.Decimal(18, 2)
+  retention        Decimal   @default(0) @db.Decimal(18, 2)
+  advanceRecovery  Decimal   @default(0) @db.Decimal(18, 2)
+  otherDeductions  Decimal   @default(0) @db.Decimal(18, 2)
+  taxAmount        Decimal   @default(0) @db.Decimal(18, 2)
+  netAmount        Decimal   @default(0) @db.Decimal(18, 2)
+  certifiedAmount  Decimal?  @db.Decimal(18, 2)
+  receivedAmount   Decimal   @default(0) @db.Decimal(18, 2)
+  invoiceNo        String?
+  invoiceDate      DateTime? @db.Date
+  dueDate          DateTime? @db.Date
+  disputeNotes     String?
+  status           String    @default("DRAFT")
+  certifiedAt      DateTime?
+  createdById      String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  lines ClientBillLine[]
+
+  @@unique([projectId, number])
+  @@unique([projectId, billSeq])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("ClientBill_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  milestone BillingMilestone? @relation("ClientBill_milestoneId", fields: [milestoneId], references: [id], onDelete: Restrict)
+  createdBy User @relation("ClientBill_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_measurement_clientBill Measurement[] @relation("Measurement_clientBillId")
+  rel_paymentAllocation_clientBill PaymentAllocation[] @relation("PaymentAllocation_clientBillId")
+  rel_creditNote_clientBill CreditNote[] @relation("CreditNote_clientBillId")
+}
+
+model ClientBillLine {
+  id               String  @id @default(cuid())
+  billId           String
+  boqItemId        String
+  description      String
+  unit             String
+  rate             Decimal @db.Decimal(18, 4)
+  previousQty      Decimal @db.Decimal(18, 4)
+  currentQty       Decimal @db.Decimal(18, 4)
+  cumulativeQty    Decimal @db.Decimal(18, 4)
+  currentAmount    Decimal @db.Decimal(18, 2)
+  cumulativeAmount Decimal @db.Decimal(18, 2)
+
+  bill ClientBill @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  boqItem BoqItem @relation("ClientBillLine_boqItemId", fields: [boqItemId], references: [id], onDelete: Restrict)
+}
+
+model CreditNote {
+  id           String   @id @default(cuid())
+  projectId    String
+  number       String
+  type         String   // CREDIT | DEBIT
+  clientBillId String?
+  date         DateTime @db.Date
+  amount       Decimal  @db.Decimal(18, 2)
+  reason       String
+  status       String   @default("DRAFT")
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("CreditNote_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  clientBill ClientBill? @relation("CreditNote_clientBillId", fields: [clientBillId], references: [id], onDelete: Restrict)
+  createdBy User @relation("CreditNote_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Equipment ─────────────────────────────
+
+model Equipment {
+  id               String   @id @default(cuid())
+  orgId            String
+  code             String
+  name             String
+  type             String
+  ownership        String   // OWNED | RENTED
+  ownerPartyId     String?
+  hourlyRate       Decimal  @default(0) @db.Decimal(18, 4) // internal hire rate for owned equipment
+  rentalRate       Decimal? @db.Decimal(18, 4)
+  rentalBasis      String?  // HOUR | DAY | MONTH
+  currentProjectId String?
+  status           String   @default("AVAILABLE") // AVAILABLE | DEPLOYED | UNDER_MAINTENANCE | BREAKDOWN | RETIRED
+  registrationNo   String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, code])
+
+  // generated foreign keys (scripts/add-relations.py)
+  ownerParty Party? @relation("Equipment_ownerPartyId", fields: [ownerPartyId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_equipmentLog_equipment EquipmentLog[] @relation("EquipmentLog_equipmentId")
+  rel_equipmentMaintenance_equipment EquipmentMaintenance[] @relation("EquipmentMaintenance_equipmentId")
+}
+
+model EquipmentLog {
+  id             String   @id @default(cuid())
+  projectId      String
+  number         String
+  equipmentId    String
+  date           DateTime @db.Date
+  operatorName   String?
+  workingHours   Decimal  @default(0) @db.Decimal(9, 2)
+  idleHours      Decimal  @default(0) @db.Decimal(9, 2)
+  breakdownHours Decimal  @default(0) @db.Decimal(9, 2)
+  fuelLitres     Decimal  @default(0) @db.Decimal(12, 2)
+  fuelCost       Decimal  @default(0) @db.Decimal(18, 2)
+  activityId     String?
+  costCodeId     String
+  amount         Decimal  @default(0) @db.Decimal(18, 2)
+  remarks        String?
+  status         String   @default("DRAFT")
+  createdById    String
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([projectId, number])
+  @@unique([equipmentId, date])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("EquipmentLog_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  equipment Equipment @relation("EquipmentLog_equipmentId", fields: [equipmentId], references: [id], onDelete: Restrict)
+  activity Activity? @relation("EquipmentLog_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+  costCode CostCode @relation("EquipmentLog_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  createdBy User @relation("EquipmentLog_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model EquipmentMaintenance {
+  id            String   @id @default(cuid())
+  projectId     String
+  equipmentId   String
+  date          DateTime @db.Date
+  type          String   // PREVENTIVE | BREAKDOWN | INSPECTION
+  description   String
+  cost          Decimal  @default(0) @db.Decimal(18, 2)
+  downtimeHours Decimal  @default(0) @db.Decimal(9, 2)
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("EquipmentMaintenance_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  equipment Equipment @relation("EquipmentMaintenance_equipmentId", fields: [equipmentId], references: [id], onDelete: Restrict)
+  createdBy User @relation("EquipmentMaintenance_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Contracts, variations, claims, risks ─────────────────────────────
+
+model Contract {
+  id                 String    @id @default(cuid())
+  projectId          String
+  number             String
+  title              String
+  type               String    // MAIN | SUBCONTRACT | SUPPLY | CONSULTANCY | SERVICE
+  counterpartyId     String
+  value              Decimal   @default(0) @db.Decimal(18, 2)
+  startDate          DateTime? @db.Date
+  endDate            DateTime? @db.Date
+  retentionPct       Decimal?  @db.Decimal(9, 6)
+  advanceAmount      Decimal?  @db.Decimal(18, 2)
+  paymentTerms       String?
+  ldRatePerDay       Decimal?  @db.Decimal(18, 2)
+  ldCapPct           Decimal?  @db.Decimal(9, 6)
+  noticePeriodDays   Int?
+  claimsDeadlineDays Int?
+  eotProvisions      String?
+  variationProcedure String?
+  complianceNotes    String?
+  status             String    @default("DRAFT") // DRAFT | ACTIVE | EXPIRED | TERMINATED | CLOSED
+  createdById        String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  clauses    ContractClause[]
+  guarantees Guarantee[]
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Contract_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  counterparty Party @relation("Contract_counterpartyId", fields: [counterpartyId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Contract_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_subcontract_contract Subcontract[] @relation("Subcontract_contractId")
+}
+
+/// Source clauses are stored verbatim; interpretations must be validated by an authorised user.
+model ContractClause {
+  id             String    @id @default(cuid())
+  contractId     String
+  clauseRef      String
+  category       String
+  sourceText     String
+  interpretation String?
+  validatedById  String?
+  validatedAt    DateTime?
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+model Guarantee {
+  id         String   @id @default(cuid())
+  contractId String
+  type       String   // PERFORMANCE_BOND | ADVANCE_GUARANTEE | RETENTION_BOND | INSURANCE
+  reference  String
+  issuer     String?
+  amount     Decimal  @db.Decimal(18, 2)
+  expiryDate DateTime @db.Date
+  status     String   @default("ACTIVE")
+
+  contract Contract @relation(fields: [contractId], references: [id], onDelete: Cascade)
+}
+
+model Variation {
+  id                 String    @id @default(cuid())
+  projectId          String
+  number             String
+  title              String
+  origin             String    // CLIENT | CONSULTANT | DESIGN | SITE | INTERNAL
+  reason             String
+  scope              String?
+  instructionRef     String?
+  drawingRefs        String?
+  costImpact         Decimal   @default(0) @db.Decimal(18, 2)
+  revenueImpact      Decimal   @default(0) @db.Decimal(18, 2)
+  scheduleImpactDays Int       @default(0)
+  clientApprovalRef  String?
+  approvedValue      Decimal?  @db.Decimal(18, 2)
+  costCodeId         String?
+  status             String    @default("DRAFT")
+  approvedAt         DateTime?
+  createdById        String
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  lines VariationLine[]
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Variation_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("Variation_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Variation_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model VariationLine {
+  id          String  @id @default(cuid())
+  variationId String
+  boqItemId   String?
+  description String
+  unit        String
+  qty         Decimal @db.Decimal(18, 4)
+  rate        Decimal @db.Decimal(18, 4)
+  costRate    Decimal @default(0) @db.Decimal(18, 4)
+  amount      Decimal @db.Decimal(18, 2)
+  costAmount  Decimal @default(0) @db.Decimal(18, 2)
+
+  variation Variation @relation(fields: [variationId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  boqItem BoqItem? @relation("VariationLine_boqItemId", fields: [boqItemId], references: [id], onDelete: Restrict)
+}
+
+model Claim {
+  id             String    @id @default(cuid())
+  projectId      String
+  number         String
+  type           String    // EOT | COST | DELAY | DISRUPTION | OTHER
+  direction      String    // BY_US | AGAINST_US
+  counterpartyId String?
+  title          String
+  description    String?
+  eventDate      DateTime? @db.Date
+  noticeDate     DateTime? @db.Date
+  submittedDate  DateTime? @db.Date
+  claimedAmount  Decimal   @default(0) @db.Decimal(18, 2)
+  claimedDays    Int       @default(0)
+  approvedAmount Decimal?  @db.Decimal(18, 2)
+  approvedDays   Int?
+  response       String?
+  status         String    @default("DRAFT") // DRAFT | SUBMITTED | UNDER_REVIEW | APPROVED | PARTIALLY_APPROVED | REJECTED | DISPUTED | WITHDRAWN
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Claim_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  counterparty Party? @relation("Claim_counterpartyId", fields: [counterpartyId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Claim_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model Risk {
+  id           String    @id @default(cuid())
+  projectId    String
+  number       String
+  title        String
+  description  String?
+  category     String
+  probability  Int
+  impact       Int
+  score        Int       @default(0)
+  costExposure Decimal   @default(0) @db.Decimal(18, 2)
+  mitigation   String?
+  ownerId      String?
+  dueDate      DateTime? @db.Date
+  status       String    @default("OPEN") // OPEN | MITIGATING | ESCALATED | CLOSED
+  createdById  String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Risk_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  owner User? @relation("Risk_ownerId", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Risk_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Quality & safety ─────────────────────────────
+
+model ChecklistTemplate {
+  id        String   @id @default(cuid())
+  orgId     String
+  name      String
+  type      String   // WIR | ITP | QUALITY | SAFETY | MATERIAL
+  items     String[]
+  createdAt DateTime @default(now())
+
+  org Organisation @relation(fields: [orgId], references: [id])
+}
+
+model Inspection {
+  id            String    @id @default(cuid())
+  projectId     String
+  number        String
+  type          String    // WIR | ITP | QUALITY | MATERIAL | SAFETY | HANDOVER
+  title         String
+  activityId    String?
+  location      String?
+  requestedDate DateTime  @db.Date
+  inspectedDate DateTime? @db.Date
+  inspectorId   String?
+  checklist     Json      @default("[]")
+  result        String    @default("PENDING") // PENDING | PASS | FAIL | CONDITIONAL
+  remarks       String?
+  status        String    @default("OPEN") // OPEN | INSPECTED | CLOSED
+  createdById   String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Inspection_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  activity Activity? @relation("Inspection_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Inspection_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model Ncr {
+  id               String    @id @default(cuid())
+  projectId        String
+  number           String
+  title            String
+  description      String
+  activityId       String?
+  inspectionId     String?
+  contractorId     String?
+  severity         String    @default("MINOR") // MINOR | MAJOR | CRITICAL
+  rootCause        String?
+  correctiveAction String?
+  preventiveAction String?
+  responsibleId    String?
+  dueDate          DateTime? @db.Date
+  estimatedReworkCost Decimal @default(0) @db.Decimal(18, 2)
+  costCodeId       String?
+  status           String    @default("OPEN") // OPEN | ACTION_PROPOSED | IN_PROGRESS | VERIFICATION | CLOSED
+  closedById       String?
+  closedAt         DateTime?
+  createdById      String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Ncr_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  activity Activity? @relation("Ncr_activityId", fields: [activityId], references: [id], onDelete: Restrict)
+  contractor Party? @relation("Ncr_contractorId", fields: [contractorId], references: [id], onDelete: Restrict)
+  costCode CostCode? @relation("Ncr_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Ncr_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model SafetyIncident {
+  id               String    @id @default(cuid())
+  projectId        String
+  number           String
+  type             String    // INCIDENT | NEAR_MISS | OBSERVATION | FIRST_AID | LTI | INSPECTION
+  date             DateTime  @db.Date
+  location         String?
+  description      String
+  injuredCount     Int       @default(0)
+  severity         String    @default("LOW")
+  immediateAction  String?
+  rootCause        String?
+  correctiveAction String?
+  responsibleId    String?
+  dueDate          DateTime? @db.Date
+  status           String    @default("OPEN") // OPEN | ACTION_IN_PROGRESS | CLOSED
+  createdById      String
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("SafetyIncident_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("SafetyIncident_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model ToolboxTalk {
+  id            String   @id @default(cuid())
+  projectId     String
+  date          DateTime @db.Date
+  topic         String
+  conductedBy   String
+  attendeeCount Int      @default(0)
+  notes         String?
+  createdById   String
+  createdAt     DateTime @default(now())
+
+  @@index([projectId, date])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("ToolboxTalk_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("ToolboxTalk_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Documents, transmittals, RFIs ─────────────────────────────
+
+model Document {
+  id                String   @id @default(cuid())
+  projectId         String
+  number            String
+  docType           String   // DRAWING | SPECIFICATION | CERTIFICATE | VENDOR | AS_BUILT | MOM | SITE_INSTRUCTION | TQ | OTHER
+  discipline        String?
+  title             String
+  originator        String?
+  confidential      Boolean  @default(false)
+  currentRevisionId String?
+  status            String   @default("ACTIVE")
+  createdById       String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  revisions DocumentRevision[]
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Document_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Document_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+/// Revisions are never overwritten. Approving a revision supersedes the previous current one.
+model DocumentRevision {
+  id           String    @id @default(cuid())
+  documentId   String
+  projectId    String
+  revision     String
+  fileId       String?
+  issueDate    DateTime? @db.Date
+  description  String?
+  status       String    @default("FOR_REVIEW") // WIP | FOR_REVIEW | APPROVED | SUPERSEDED | VOID | REJECTED | RETURNED | SUBMITTED
+  reviewComments String?
+  approvedById String?
+  approvedAt   DateTime?
+  createdById  String
+  createdAt    DateTime  @default(now())
+
+  document Document @relation(fields: [documentId], references: [id], onDelete: Restrict)
+
+  @@unique([documentId, revision])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("DocumentRevision_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  file FileObject? @relation("DocumentRevision_fileId", fields: [fileId], references: [id], onDelete: Restrict)
+  createdBy User @relation("DocumentRevision_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model Transmittal {
+  id             String    @id @default(cuid())
+  projectId      String
+  number         String
+  recipientId    String?
+  recipientName  String
+  subject        String
+  purpose        String    // FOR_APPROVAL | FOR_INFORMATION | FOR_CONSTRUCTION | FOR_REVIEW
+  sentDate       DateTime? @db.Date
+  distribution   String[]  @default([])
+  revisionIds    String[]  @default([])
+  status         String    @default("DRAFT") // DRAFT | SENT | ACKNOWLEDGED
+  acknowledgedAt DateTime?
+  acknowledgedBy String?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Transmittal_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  recipient Party? @relation("Transmittal_recipientId", fields: [recipientId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Transmittal_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model Rfi {
+  id             String    @id @default(cuid())
+  projectId      String
+  number         String
+  kind           String    @default("RFI") // RFI | TECHNICAL_QUERY | SITE_INSTRUCTION
+  subject        String
+  question       String
+  discipline     String?
+  addressedTo    String?
+  dueDate        DateTime? @db.Date
+  response       String?
+  respondedAt    DateTime?
+  costImpact     Boolean   @default(false)
+  scheduleImpact Boolean   @default(false)
+  status         String    @default("OPEN") // OPEN | ANSWERED | CLOSED
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@unique([projectId, number])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Rfi_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Rfi_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Tasks & team ─────────────────────────────
+
+model Task {
+  id             String    @id @default(cuid())
+  projectId      String
+  number         String
+  title          String
+  description    String?
+  category       String    @default("GENERAL")
+  relatedType    String?
+  relatedId      String?
+  ownerId        String?
+  reviewerId     String?
+  approverId     String?
+  priority       String    @default("MEDIUM")
+  startDate      DateTime? @db.Date
+  dueDate        DateTime? @db.Date
+  estimatedHours Decimal?  @db.Decimal(9, 2)
+  actualHours    Decimal?  @db.Decimal(9, 2)
+  status         String    @default("BACKLOG")
+  checklist      Json      @default("[]")
+  completionNote String?
+  handoverNotes  String?
+  recurrence     String?   // DAILY | WEEKLY | MONTHLY
+  recurrenceParentId String?
+  slaHours       Int?
+  completedAt    DateTime?
+  overdueNotifiedAt DateTime?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  contributors TaskContributor[]
+  dependencies TaskDependency[] @relation("TaskDeps")
+  dependents   TaskDependency[] @relation("TaskDependents")
+  handovers    TaskHandover[]
+
+  @@unique([projectId, number])
+  @@index([projectId, status])
+  @@index([ownerId, status])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Task_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  owner User? @relation("Task_ownerId", fields: [ownerId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Task_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model TaskContributor {
+  taskId String
+  userId String
+  task   Task   @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, userId])
+}
+
+model TaskDependency {
+  taskId      String
+  dependsOnId String
+  task        Task   @relation("TaskDeps", fields: [taskId], references: [id], onDelete: Cascade)
+  dependsOn   Task   @relation("TaskDependents", fields: [dependsOnId], references: [id], onDelete: Cascade)
+
+  @@id([taskId, dependsOnId])
+}
+
+model TaskHandover {
+  id         String   @id @default(cuid())
+  taskId     String
+  fromUserId String?
+  toUserId   String
+  notes      String?
+  createdById String
+  createdAt  DateTime @default(now())
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  // generated foreign keys (scripts/add-relations.py)
+  createdBy User @relation("TaskHandover_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+/// Editable RACI / responsibility matrix per process (document type) and optional project.
+model ResponsibilityAssignment {
+  id               String   @id @default(cuid())
+  orgId            String
+  projectId        String?
+  processType      String
+  responsibleId    String?
+  accountableId    String?
+  reviewerId       String?
+  approverId       String?
+  backupId         String?
+  slaHours         Int?
+  escalationUserId String?
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, projectId, processType])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project? @relation("ResponsibilityAssignment_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+}
+
+// ───────────────────────────── Workflow & approvals ─────────────────────────────
+
+model WorkflowDefinition {
+  id                String   @id @default(cuid())
+  orgId             String
+  projectId         String?
+  docType           String
+  name              String
+  isActive          Boolean  @default(true)
+  allowSelfApproval Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  org   Organisation   @relation(fields: [orgId], references: [id])
+  steps WorkflowStep[]
+
+  @@unique([orgId, projectId, docType])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project? @relation("WorkflowDefinition_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+
+  // generated back-relations
+  rel_approvalRequest_definition ApprovalRequest[] @relation("ApprovalRequest_definitionId")
+}
+
+model WorkflowStep {
+  id                String   @id @default(cuid())
+  definitionId      String
+  stepNo            Int
+  name              String
+  approverRoleCode  String?
+  approverUserId    String?
+  minAmount         Decimal? @db.Decimal(18, 2)
+  maxAmount         Decimal? @db.Decimal(18, 2)
+  requiredApprovals Int      @default(1)
+  slaHours          Int      @default(48)
+  escalateToRoleCode String?
+
+  definition WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, stepNo])
+}
+
+enum ApprovalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  RETURNED
+  CANCELLED
+}
+
+model ApprovalRequest {
+  id             String         @id @default(cuid())
+  orgId          String
+  projectId      String
+  docType        String
+  entityId       String
+  entityNumber   String?
+  title          String
+  amount         Decimal?       @db.Decimal(18, 2)
+  definitionId   String
+  steps          Json           // resolved applicable steps at submission
+  currentStepNo  Int
+  stepStartedAt  DateTime       @default(now())
+  status         ApprovalStatus @default(PENDING)
+  submittedById  String
+  submittedAt    DateTime       @default(now())
+  completedAt    DateTime?
+  escalatedAt    DateTime?
+  activeKey      String?        @unique // "<docType>:<entityId>" while pending — one active request per document
+
+  actions ApprovalAction[]
+
+  @@index([projectId, status])
+  @@index([docType, entityId])
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("ApprovalRequest_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  definition WorkflowDefinition @relation("ApprovalRequest_definitionId", fields: [definitionId], references: [id], onDelete: Restrict)
+}
+
+model ApprovalAction {
+  id           String   @id @default(cuid())
+  requestId    String
+  stepNo       Int
+  actorId      String
+  onBehalfOfId String?
+  action       String   // SUBMIT | APPROVE | REJECT | RETURN | ESCALATE | CANCEL | COMMENT
+  comment      String?
+  createdAt    DateTime @default(now())
+
+  request ApprovalRequest @relation(fields: [requestId], references: [id], onDelete: Cascade)
+
+  @@index([requestId])
+}
+
+model Delegation {
+  id         String   @id @default(cuid())
+  orgId      String
+  fromUserId String
+  toUserId   String
+  startDate  DateTime @db.Date
+  endDate    DateTime @db.Date
+  docTypes   String[] @default([])
+  reason     String?
+  isActive   Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([toUserId])
+}
+
+// ───────────────────────────── Numbering, register, notifications, audit ─────────────────────────────
+
+model DocumentType {
+  id                  String  @id @default(cuid())
+  orgId               String
+  code                String
+  name                String
+  abbreviation        String
+  numberFormat        String
+  resetPolicy         String  @default("NEVER")
+  requiredAttachments Int     @default(0)
+  isActive            Boolean @default(true)
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, code])
+}
+
+model NumberSequence {
+  id        String @id @default(cuid())
+  orgId     String
+  docType   String
+  scopeKey  String
+  lastValue Int    @default(0)
+
+  @@unique([orgId, docType, scopeKey])
+}
+
+/// Cross-module document register. Numbers are unique per organisation.
+model RegisterEntry {
+  id         String   @id @default(cuid())
+  orgId      String
+  projectId  String?
+  docType    String
+  number     String
+  entityType String
+  entityId   String
+  title      String?
+  status     String?
+  ownerId    String?
+  amount     Decimal? @db.Decimal(18, 2)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@unique([orgId, number])
+  @@unique([entityType, entityId])
+  @@index([projectId, docType])
+}
+
+model Notification {
+  id         String    @id @default(cuid())
+  userId     String
+  projectId  String?
+  type       String
+  title      String
+  body       String?
+  link       String?
+  entityType String?
+  entityId   String?
+  dedupeKey  String?
+  readAt     DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, dedupeKey])
+  @@index([userId, readAt])
+}
+
+model NotificationPreference {
+  id     String  @id @default(cuid())
+  userId String
+  type   String
+  inApp  Boolean @default(true)
+  email  Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, type])
+}
+
+/// Append-only audit trail.
+model AuditEvent {
+  id         String   @id @default(cuid())
+  orgId      String
+  projectId  String?
+  actorId    String?
+  action     String
+  entityType String
+  entityId   String?
+  summary    String?
+  before     Json?
+  after      Json?
+  reason     String?
+  ip         String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@index([orgId, createdAt])
+  @@index([entityType, entityId])
+  @@index([projectId, createdAt])
+}
+
+model IntegrationConfig {
+  id             String    @id @default(cuid())
+  orgId          String
+  provider       String
+  kind           String    // ACCOUNTING | ERP | PAYROLL | EMAIL | STORAGE | SCHEDULING
+  status         String    @default("NOT_CONFIGURED") // NOT_CONFIGURED | CONFIGURED_UNTESTED | ACTIVE | ERROR
+  config         Json      @default("{}")
+  lastTestAt     DateTime?
+  lastTestResult String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  org Organisation @relation(fields: [orgId], references: [id])
+
+  @@unique([orgId, provider])
+}
+
+model ImportJob {
+  id          String    @id @default(cuid())
+  orgId       String
+  projectId   String?
+  kind        String    // BOQ | MATERIALS | SUPPLIERS | OPENING_STOCK | COST_CODES
+  fileName    String
+  status      String    @default("PREVIEW") // PREVIEW | COMMITTED | CANCELLED | FAILED
+  mapping     Json      @default("{}")
+  rows        Json      @default("[]")
+  summary     Json      @default("{}")
+  createdById String
+  committedAt DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+// ───────────────────────────── Closeout ─────────────────────────────
+
+model Closeout {
+  id             String    @id @default(cuid())
+  projectId      String    @unique
+  status         String    @default("IN_PROGRESS") // IN_PROGRESS | SUBMITTED | APPROVED | ARCHIVED | RETURNED | REJECTED
+  lessonsLearned String?
+  finalSnapshot  Json?
+  approvedAt     DateTime?
+  archivedAt     DateTime?
+  createdById    String
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  items CloseoutItem[]
+
+  // generated foreign keys (scripts/add-relations.py)
+  project Project @relation("Closeout_projectId", fields: [projectId], references: [id], onDelete: Restrict)
+  createdBy User @relation("Closeout_createdById", fields: [createdById], references: [id], onDelete: Restrict)
+}
+
+model CloseoutItem {
+  id          String    @id @default(cuid())
+  closeoutId  String
+  key         String
+  label       String
+  status      String    @default("PENDING") // PENDING | DONE | NOT_APPLICABLE
+  ownerId     String?
+  note        String?
+  completedAt DateTime?
+
+  closeout Closeout @relation(fields: [closeoutId], references: [id], onDelete: Cascade)
+
+  @@unique([closeoutId, key])
+
+  // generated foreign keys (scripts/add-relations.py)
+  owner User? @relation("CloseoutItem_ownerId", fields: [ownerId], references: [id], onDelete: Restrict)
+}
