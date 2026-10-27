@@ -61,12 +61,14 @@ filesRouter.get('/:id', async (req, res) => {
     const rev = await prisma.documentRevision.findFirst({ where: { fileId: f.id }, include: { document: { select: { confidential: true } } } });
     if (rev?.document.confidential) assertCan(ctx, 'document.manage', f.projectId);
   }
+  // Open the stream first so a storage error is returned as JSON, not as a broken file.
+  const stream = await storage.get(f.storageKey);
   res.setHeader('Content-Type', f.mimeType);
   res.setHeader('Content-Disposition', `${req.query.download ? 'attachment' : 'inline'}; filename="${encodeURIComponent(f.originalName)}"`);
   res.setHeader('Cache-Control', 'private, max-age=300');
   res.setHeader('X-File-Sha256', f.sha256);
   if (req.query.download) await audit(prisma, ctx, { action: 'FILE_DOWNLOAD', entityType: 'file', entityId: f.id, projectId: f.projectId, summary: f.originalName });
-  (await storage.get(f.storageKey)).pipe(res);
+  stream.pipe(res);
 });
 
 // ───────── Site evidence ─────────

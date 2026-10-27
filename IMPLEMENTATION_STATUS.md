@@ -80,9 +80,10 @@ Many registers use the shared **resource framework**: field metadata in `package
 | Exports | Working · tested | CSV, XLSX, PDF |
 | Mobile and responsive | Working · tested (layout) | Bottom navigation, camera capture, drawer, card lists, no horizontal overflow on tested pages |
 | Offline | Partial | Form drafts (localStorage) and a photo upload queue (IndexedDB) with sync status. **Other data entry is not available offline.** |
-| File storage | Working (local) | Local disk adapter. The S3 adapter is an interface only and not active. |
+| File storage | Working (local); Vercel Blob implemented | Local disk adapter. Vercel Blob adapter (private access) is used automatically when `BLOB_READ_WRITE_TOKEN` is set; it has not been tested against a real Blob store. The S3 adapter is an interface only and not active. |
 | Email | Not active | Requires SMTP configuration and a transport implementation |
 | Containers | Working | API and web images built and run (`docker-compose.yml`). See `docs/OPERATIONS.md`. |
+| Vercel hosting | Configured, not yet deployed | `vercel.json`, a serverless function and a build script that migrates and seeds. Daily cron for jobs. Browser photo shrinking for the 4.5 MB request limit. The build, function bundle and handler were verified locally (`docs/DEPLOY_VERCEL.md`); a real Vercel deployment has not been done. |
 
 ## Known limitations and decisions to confirm
 

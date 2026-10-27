@@ -46,6 +46,7 @@ async function request<T>(method: string, path: string, body?: unknown, params?:
   if (res.status === 401 && !path.startsWith('/auth/')) onUnauthorized?.();
   const ct = res.headers.get('content-type') ?? '';
   const data = ct.includes('application/json') ? await res.json().catch(() => null) : null;
+  if (res.status === 413) throw new ApiError(413, 'TOO_LARGE', 'This file is too large to upload (the server accepts about 4 MB per request). Reduce its size and try again.');
   if (!res.ok) {
     const err = (data as { error?: { code: string; message: string; details?: unknown } } | null)?.error;
     throw new ApiError(res.status, err?.code ?? 'HTTP_' + res.status, err?.message ?? res.statusText, err?.details);

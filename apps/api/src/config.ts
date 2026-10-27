@@ -9,6 +9,8 @@ const env = process.env;
 const isTest = env.NODE_ENV === 'test' || env.VITEST === 'true';
 /** Seeding drives the API in-process: relax rate limits and quieten request logs. */
 const isSeed = env.SEED_MODE === 'true';
+/** Running on Vercel (serverless): no writable disk, no long-lived process. */
+const isVercel = env.VERCEL === '1';
 
 export const config = {
   env: env.NODE_ENV ?? 'development',
@@ -21,7 +23,9 @@ export const config = {
   sessionIdleHours: num(env.SESSION_IDLE_HOURS, 4),
   cookieSecure: env.COOKIE_SECURE === 'true' || env.NODE_ENV === 'production',
   cookieName: 'tr_session',
-  storageDriver: env.STORAGE_DRIVER ?? 'local',
+  isVercel,
+  // Vercel Blob is used automatically when its token is present (Vercel → Storage → Blob → connect).
+  storageDriver: env.STORAGE_DRIVER ?? (env.BLOB_READ_WRITE_TOKEN ? 'vercel-blob' : isVercel ? 'none' : 'local'),
   storageDir: path.resolve(env.STORAGE_DIR ?? './storage'),
   maxUploadBytes: num(env.MAX_UPLOAD_MB, 15) * 1024 * 1024,
   smtpUrl: env.SMTP_URL ?? '',
@@ -29,5 +33,7 @@ export const config = {
   logLevel: isSeed ? 'warn' : (env.LOG_LEVEL ?? (isTest ? 'silent' : 'info')),
   relaxedLimits: isTest || isSeed,
   /** Disable the in-process job scheduler (tests). */
-  disableJobs: isTest || env.DISABLE_JOBS === 'true',
+  disableJobs: isTest || isVercel || env.DISABLE_JOBS === 'true',
+  /** Shared secret Vercel Cron sends as a Bearer token to run scheduled jobs. */
+  cronSecret: env.CRON_SECRET ?? '',
 };

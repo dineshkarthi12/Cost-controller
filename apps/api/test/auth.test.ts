@@ -57,3 +57,13 @@ describe('authentication', () => {
     await w.c.admin.ok.post(`/admin/users/${w.users.qs.id}/reactivate`);
   });
 });
+
+describe('scheduled jobs endpoint (Vercel Cron)', () => {
+  it('runs only with the exact CRON_SECRET bearer token', async () => {
+    expect((await request(app).get('/api/cron/jobs')).status).toBe(404);
+    expect((await request(app).get('/api/cron/jobs').set('Authorization', 'Bearer wrong')).status).toBe(404);
+    const ok = await request(app).get('/api/cron/jobs').set('Authorization', 'Bearer test-cron-secret-0123456789');
+    expect(ok.status).toBe(200);
+    expect(ok.body).toHaveProperty('approval escalations');
+  });
+});

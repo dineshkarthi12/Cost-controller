@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import express, { Router } from 'express';
 import helmet from 'helmet';
 import cors from 'cors';
@@ -49,6 +50,17 @@ export function createApp() {
   app.get('/api/health', async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ status: 'ok', time: new Date().toISOString() });
+  });
+
+  // Scheduled jobs for serverless hosts (Vercel Cron sends "Authorization: Bearer $CRON_SECRET").
+  // Disabled unless CRON_SECRET is configured.
+  app.get('/api/cron/jobs', async (req, res) => {
+    const expected = Buffer.from(`Bearer ${config.cronSecret}`);
+    const given = Buffer.from(req.get('authorization') ?? '');
+    if (!config.cronSecret || given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Endpoint not found' } });
+    }
+    res.json(await runAllJobs());
   });
 
   app.use('/api', requireCsrfHeader);

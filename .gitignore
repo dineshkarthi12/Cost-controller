@@ -13,3 +13,4 @@ test-results/
 .vite/
 apps/api/storage-test/
 apps/api/storage-e2e/
+.vercel

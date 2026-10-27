@@ -14,6 +14,7 @@ A web application for controlling construction project cost: budgets, commitment
 | [`TEST_PLAN.md`](TEST_PLAN.md) | Test layers, coverage, latest results, untested areas |
 | [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) | Status of every module and capability |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Deployment, configuration, backup and recovery, security checklist |
+| [`docs/DEPLOY_VERCEL.md`](docs/DEPLOY_VERCEL.md) | Step-by-step Vercel deployment (database, Blob storage, cron) |
 
 ## Stack
 
@@ -86,6 +87,10 @@ docker compose exec -e SEED_PASSWORD='a-long-demo-password' api npm run db:seed
 ```
 
 The web app is served on http://localhost:8080; nginx proxies `/api` to the API container. See [`docs/OPERATIONS.md`](docs/OPERATIONS.md) for production settings (HTTPS, `COOKIE_SECURE`, backups).
+
+## Vercel
+
+Import the repository as **one project with Root Directory `./`**, then connect a Neon Postgres database and a private Blob store, and set `SEED_PASSWORD`. `vercel.json` handles everything else. Full steps: [`docs/DEPLOY_VERCEL.md`](docs/DEPLOY_VERCEL.md).
 
 ## Security model, in brief
 

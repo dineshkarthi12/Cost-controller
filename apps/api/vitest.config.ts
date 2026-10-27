@@ -20,7 +20,7 @@ export default defineConfig({
   test: {
     include: ['test/**/*.test.ts'],
     globalSetup: ['./test/global-setup.ts'],
-    env: { NODE_ENV: 'test', DATABASE_URL: url, TEST_DATABASE_URL: url, STORAGE_DIR: './storage-test' },
+    env: { NODE_ENV: 'test', DATABASE_URL: url, TEST_DATABASE_URL: url, STORAGE_DIR: './storage-test', CRON_SECRET: 'test-cron-secret-0123456789' },
     fileParallelism: false,
     testTimeout: 60_000,
     hookTimeout: 120_000,

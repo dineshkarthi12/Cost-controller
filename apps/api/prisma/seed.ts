@@ -14,11 +14,12 @@ import request from 'supertest';
 import { prisma } from '../src/lib/prisma.js';
 import { hashPassword } from '../src/lib/crypto.js';
 import { bootstrapOrganisation } from '../src/services/bootstrap.js';
+import { storageAvailable } from '../src/services/storage.js';
 import { createApp } from '../src/app.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 // The development default must never reach a production database.
-if (process.env.NODE_ENV === 'production' && !process.env.SEED_PASSWORD) throw new Error('Set SEED_PASSWORD (min. 12 characters) to seed in production');
+if ((process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') && !process.env.SEED_PASSWORD) throw new Error('Set SEED_PASSWORD (min. 12 characters) to seed in production');
 const PASSWORD = process.env.SEED_PASSWORD || 'Toprock@2025!';
 if (PASSWORD.length < 12) throw new Error('SEED_PASSWORD must be at least 12 characters');
 const DEMO = process.env.SEED_DEMO !== 'false';
@@ -541,33 +542,35 @@ async function main() {
   }
   console.log('✔ Manpower, attendance, equipment, site diary');
 
-  // ───────── Site evidence ─────────
-  const photos = Array.from({ length: 10 }, (_, i) => path.join(here, 'demo-assets', `site-${String(i + 1).padStart(2, '0')}.jpg`));
-  const evid: any[] = [];
-  const evDefs: Array<[number, string, string, string, string]> = [
-    [0, 'WORK_COMPLETION', 'Tower A — Level 12 slab reinforcement', 'Tower A L12', 'karthik.s'],
-    [1, 'WORK_COMPLETION', 'Block B — brickwork progress', 'Tower B L3', 'suresh.babu'],
-    [2, 'EQUIPMENT', 'M&E installation — riser shaft', 'Tower A core', 'farhan.ali'],
-    [3, 'MEASUREMENT', 'Concrete pouring — raft pour 3', 'Raft', 'karthik.s'],
-    [4, 'WORK_COMPLETION', 'Terrace waterproofing trial', 'Tower A roof', 'karthik.s'],
-    [5, 'QUALITY', 'Rebar inspection before pour', 'Tower A L11', 'lakshmi.n'],
-    [6, 'MATERIAL_RECEIPT', 'Cement receipt — GRN', 'Main store', 'priya.natarajan'],
-    [7, 'SAFETY', 'Scaffolding safety check', 'Tower B façade', 'lakshmi.n'],
-    [8, 'WORK_COMPLETION', 'Excavation — basement', 'Basement', 'karthik.s'],
-    [9, 'MANPOWER', 'Morning muster — own labour', 'Gate 2', 'suresh.babu'],
-  ];
-  for (const [i, category, caption, location, user] of evDefs) {
-    const linked = category === 'MATERIAL_RECEIPT' ? { linkedType: 'grn', linkedId: cementGrn!.id } : category === 'MEASUREMENT' ? { linkedType: 'measurement', linkedId: (await prisma.measurement.findFirst({ where: { projectId: RH.id, location: 'Raft pour 3 & pedestals' } }))!.id } : {};
-    const fields: Record<string, string> = { category, caption, location, phase: i === 4 ? 'BEFORE' : 'NA', claimedTakenAt: new Date(Date.now() - (10 - i) * 86_400_000).toISOString(), ...(linked as Record<string, string>) };
-    if (i === 4) fields.pairKey = 'TERRACE-WP';
-    const r = await (await as(user)).upload(`${P}/evidence`, [photos[i]], fields);
-    evid.push(r[0]);
-  }
-  for (const [i, status, comment] of [[0, 'VERIFIED', ''], [1, 'CORRECTION_REQUIRED', 'Caption says Block B; photo shows Tower B — please correct the location'], [2, 'VERIFIED', ''], [3, 'VERIFIED', ''], [6, 'VERIFIED', ''], [8, 'VERIFIED', '']] as const) {
-    const reviewer = evDefs[i][4] === 'karthik.s' ? 'farhan.ali' : 'karthik.s';
-    await (await as(reviewer)).post(`${P}/evidence/${evid[i].id}/review`, { status, comment: comment || undefined });
-  }
-  console.log('✔ Site evidence');
+  // ───────── Site evidence (needs file storage) ─────────
+  if (storageAvailable) {
+    const photos = Array.from({ length: 10 }, (_, i) => path.join(here, 'demo-assets', `site-${String(i + 1).padStart(2, '0')}.jpg`));
+    const evid: any[] = [];
+    const evDefs: Array<[number, string, string, string, string]> = [
+      [0, 'WORK_COMPLETION', 'Tower A — Level 12 slab reinforcement', 'Tower A L12', 'karthik.s'],
+      [1, 'WORK_COMPLETION', 'Block B — brickwork progress', 'Tower B L3', 'suresh.babu'],
+      [2, 'EQUIPMENT', 'M&E installation — riser shaft', 'Tower A core', 'farhan.ali'],
+      [3, 'MEASUREMENT', 'Concrete pouring — raft pour 3', 'Raft', 'karthik.s'],
+      [4, 'WORK_COMPLETION', 'Terrace waterproofing trial', 'Tower A roof', 'karthik.s'],
+      [5, 'QUALITY', 'Rebar inspection before pour', 'Tower A L11', 'lakshmi.n'],
+      [6, 'MATERIAL_RECEIPT', 'Cement receipt — GRN', 'Main store', 'priya.natarajan'],
+      [7, 'SAFETY', 'Scaffolding safety check', 'Tower B façade', 'lakshmi.n'],
+      [8, 'WORK_COMPLETION', 'Excavation — basement', 'Basement', 'karthik.s'],
+      [9, 'MANPOWER', 'Morning muster — own labour', 'Gate 2', 'suresh.babu'],
+    ];
+    for (const [i, category, caption, location, user] of evDefs) {
+      const linked = category === 'MATERIAL_RECEIPT' ? { linkedType: 'grn', linkedId: cementGrn!.id } : category === 'MEASUREMENT' ? { linkedType: 'measurement', linkedId: (await prisma.measurement.findFirst({ where: { projectId: RH.id, location: 'Raft pour 3 & pedestals' } }))!.id } : {};
+      const fields: Record<string, string> = { category, caption, location, phase: i === 4 ? 'BEFORE' : 'NA', claimedTakenAt: new Date(Date.now() - (10 - i) * 86_400_000).toISOString(), ...(linked as Record<string, string>) };
+      if (i === 4) fields.pairKey = 'TERRACE-WP';
+      const r = await (await as(user)).upload(`${P}/evidence`, [photos[i]], fields);
+      evid.push(r[0]);
+    }
+    for (const [i, status, comment] of [[0, 'VERIFIED', ''], [1, 'CORRECTION_REQUIRED', 'Caption says Block B; photo shows Tower B — please correct the location'], [2, 'VERIFIED', ''], [3, 'VERIFIED', ''], [6, 'VERIFIED', ''], [8, 'VERIFIED', '']] as const) {
+      const reviewer = evDefs[i][4] === 'karthik.s' ? 'farhan.ali' : 'karthik.s';
+      await (await as(reviewer)).post(`${P}/evidence/${evid[i].id}/review`, { status, comment: comment || undefined });
+    }
+    console.log('✔ Site evidence');
+  } else console.log('… Site evidence skipped: no file storage configured');
 
   // ───────── Variations, claims, risks, contracts ─────────
   const vo1 = await QS.post(`${P}/r/variations`, { title: 'Additional basement waterproofing (client instruction)', origin: 'CLIENT', reason: 'Higher water table found during excavation', scope: 'Crystalline waterproofing to basement retaining walls', instructionRef: 'CI-014', costCodeId: cc['02-200'].id, scheduleImpactDays: 7, clientApprovalRef: 'GD/RH/VO/014', lines: [{ boqItemId: boq['B-602'].id, description: 'Crystalline waterproofing to retaining walls', unit: 'SQM', qty: '4200', rate: '1150', costRate: '820' }] });
@@ -666,26 +669,28 @@ async function main() {
     ['DRAWING', 'ARCHITECTURAL', 'Typical floor plan — Tower B'],
     ['SPECIFICATION', 'MEP', 'Electrical specification v2'],
   ];
-  for (const [docType, discipline, title] of docDefs) {
-    const doc = await DC.post(`${P}/r/documents`, { docType, discipline, title, originator: 'Archon Design Consultants' });
-    for (const rev of ['A', 'B']) {
-      const { renderPdf } = await import('../src/services/pdf.js');
-      const buf = await renderPdf({ title: `${title} — rev ${rev}`, subtitle: 'DEMO DRAWING PLACEHOLDER', meta: [['Document', title], ['Revision', rev]], columns: [{ key: 'n', label: 'Note', width: 1 }], rows: [{ n: 'Placeholder document generated for demo data. Not a real drawing.' }] });
-      const tmp = path.join(here, 'demo-assets', `.tmp-${rev}.pdf`);
-      const fs = await import('node:fs/promises');
-      await fs.writeFile(tmp, buf);
-      const agent = request.agent(app);
-      await agent.post('/api/auth/login').set('X-Requested-With', 'toprock').send({ email: `ravi.kumar@${DOMAIN}`, password: PASSWORD });
-      const up = await agent.post(`/api${P}/documents/${doc.id}/revisions`).set('X-Requested-With', 'toprock').field('revision', rev).field('description', rev === 'A' ? 'Issued for review' : 'Issued for construction').attach('file', tmp);
-      await fs.unlink(tmp);
-      if (up.status >= 300) throw new Error(JSON.stringify(up.body));
-      await DC.post(`${P}/document-revisions/${up.body.id}/submit`);
-      if (rev === 'A' || title.includes('Tower A')) await approve(up.body.id, ['rajesh.iyer']);
+  if (storageAvailable) {
+    for (const [docType, discipline, title] of docDefs) {
+      const doc = await DC.post(`${P}/r/documents`, { docType, discipline, title, originator: 'Archon Design Consultants' });
+      for (const rev of ['A', 'B']) {
+        const { renderPdf } = await import('../src/services/pdf.js');
+        const buf = await renderPdf({ title: `${title} — rev ${rev}`, subtitle: 'DEMO DRAWING PLACEHOLDER', meta: [['Document', title], ['Revision', rev]], columns: [{ key: 'n', label: 'Note', width: 1 }], rows: [{ n: 'Placeholder document generated for demo data. Not a real drawing.' }] });
+        const tmp = path.join(here, 'demo-assets', `.tmp-${rev}.pdf`);
+        const fs = await import('node:fs/promises');
+        await fs.writeFile(tmp, buf);
+        const agent = request.agent(app);
+        await agent.post('/api/auth/login').set('X-Requested-With', 'toprock').send({ email: `ravi.kumar@${DOMAIN}`, password: PASSWORD });
+        const up = await agent.post(`/api${P}/documents/${doc.id}/revisions`).set('X-Requested-With', 'toprock').field('revision', rev).field('description', rev === 'A' ? 'Issued for review' : 'Issued for construction').attach('file', tmp);
+        await fs.unlink(tmp);
+        if (up.status >= 300) throw new Error(JSON.stringify(up.body));
+        await DC.post(`${P}/document-revisions/${up.body.id}/submit`);
+        if (rev === 'A' || title.includes('Tower A')) await approve(up.body.id, ['rajesh.iyer']);
+      }
     }
-  }
-  const tr = await DC.post(`${P}/r/transmittals`, { recipientId: parties['SC-BHT'].id, recipientName: 'Bharat Enterprises', subject: 'IFC drawings — Tower A L10–L14', purpose: 'FOR_CONSTRUCTION', distribution: ['site@bharat.example'] });
-  const approvedRevs = await prisma.documentRevision.findMany({ where: { projectId: RH.id, status: 'APPROVED' }, take: 2 });
-  await DC.post(`${P}/transmittals/${tr.id}/send`, { revisionIds: approvedRevs.map((r) => r.id) });
+    const tr = await DC.post(`${P}/r/transmittals`, { recipientId: parties['SC-BHT'].id, recipientName: 'Bharat Enterprises', subject: 'IFC drawings — Tower A L10–L14', purpose: 'FOR_CONSTRUCTION', distribution: ['site@bharat.example'] });
+    const approvedRevs = await prisma.documentRevision.findMany({ where: { projectId: RH.id, status: 'APPROVED' }, take: 2 });
+    await DC.post(`${P}/transmittals/${tr.id}/send`, { revisionIds: approvedRevs.map((r) => r.id) });
+  } else console.log('… Document revisions and transmittal skipped: no file storage configured');
   await K.post(`${P}/r/rfis`, { kind: 'RFI', subject: 'Cantilever slab reinforcement detail at grid C/7', question: 'Drawing shows conflicting top reinforcement at cantilever. Please confirm bar diameter.', discipline: 'Structural', addressedTo: 'Archon Design Consultants', dueDate: d(3), costImpact: false, scheduleImpact: true });
   await K.post(`${P}/r/rfis`, { kind: 'TECHNICAL_QUERY', subject: 'Tile layout start point in lobby', question: 'Confirm whether tile layout starts from lift lobby centre line.', discipline: 'Architectural', addressedTo: 'Client PMC', dueDate: d(-2), response: 'Start from lift lobby centre line.', status: 'ANSWERED' });
   console.log('✔ Quality, safety, documents, RFIs');

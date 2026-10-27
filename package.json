@@ -7,6 +7,9 @@
     "packages/*",
     "apps/*"
   ],
+  "engines": {
+    "node": "22.x"
+  },
   "scripts": {
     "dev": "npm run dev --workspace @toprock/api & npm run dev --workspace @toprock/web",
     "dev:api": "npm run dev --workspace @toprock/api",

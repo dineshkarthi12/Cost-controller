@@ -7,6 +7,7 @@ import { EVIDENCE_STATUS, humanize } from '@toprock/shared';
 import { api, type Paged } from '../../lib/api';
 import { useAuth, useProjectId } from '../../lib/auth';
 import { enqueueUpload, processQueue, removeQueued, useOnline, useUploadQueue } from '../../lib/offline';
+import { shrinkImage } from '../../lib/images';
 import { fileSize, formatDateTime, relativeTime } from '../../lib/format';
 import { Badge, Button, Card, DescriptionList, Dialog, EmptyState, Field, Input, LoadingBlock, Pagination, PermissionDenied, Select, StatusBadge, TabPanel, Tabs, Textarea, cx } from '../../components/ui';
 import { RefSelect } from '../../components/forms/RefSelect';
@@ -37,7 +38,7 @@ function CaptureDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (o
       for (const file of files) {
         const fields: Record<string, string> = { category: f.category, phase: f.phase, claimedTakenAt: new Date(file.lastModified || Date.now()).toISOString() };
         for (const k of ['caption', 'location', 'pairKey', 'linkedType', 'linkedId', 'activityId']) if (f[k]) fields[k] = f[k];
-        await enqueueUpload(projectId, file, fields);
+        await enqueueUpload(projectId, await shrinkImage(file), fields);
       }
       toast.success(online ? `${files.length} photo(s) queued for upload` : `${files.length} photo(s) saved on this device — they will upload when you are back online`);
       setFiles([]);

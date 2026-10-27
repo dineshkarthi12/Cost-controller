@@ -1,4 +1,5 @@
 import { useRef, useState, type JSX } from 'react';
+import { shrinkImage } from '../../lib/images';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { CheckCircle2, CircleDot, CornerUpLeft, FileUp, Paperclip, Send, XCircle, AlertTriangle, Clock } from 'lucide-react';
@@ -211,12 +212,15 @@ export function AttachmentsPanel({ entityType, entityId, canUpload = true }: { e
   const input = useRef<HTMLInputElement>(null);
   const q = useQuery({ queryKey: ['p', 'attachments', entityType, entityId], queryFn: () => api.get<AttachmentRow[]>(`/projects/${projectId}/attachments`, { entityType, entityId }) });
   const up = useMutation({
-    mutationFn: (files: FileList) => {
-      const f = new FormData();
-      f.append('entityType', entityType);
-      f.append('entityId', entityId);
-      Array.from(files).forEach((x) => f.append('files', x));
-      return api.upload(`/projects/${projectId}/attachments`, f);
+    // One request per file keeps each request under hosting body-size limits.
+    mutationFn: async (files: FileList) => {
+      for (const x of Array.from(files)) {
+        const f = new FormData();
+        f.append('entityType', entityType);
+        f.append('entityId', entityId);
+        f.append('files', await shrinkImage(x));
+        await api.upload(`/projects/${projectId}/attachments`, f);
+      }
     },
     onSuccess: () => {
       toast.success('Attachment uploaded');

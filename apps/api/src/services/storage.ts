@@ -1,10 +1,13 @@
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
-import type { Readable } from 'node:stream';
+import { Readable } from 'node:stream';
+import type { ReadableStream as WebReadableStream } from 'node:stream/web';
+import { get as blobGet, head as blobHead, put as blobPut } from '@vercel/blob';
 import { config } from '../config.js';
+import { AppError } from '../lib/errors.js';
 
-/** Object-storage abstraction. Local disk is active; the S3 adapter is an interface only. */
+/** Object-storage abstraction: local disk, or Vercel Blob (private) on Vercel. The S3 adapter is an interface only. */
 export interface StorageProvider {
   put(key: string, data: Buffer, mimeType: string): Promise<void>;
   get(key: string): Promise<Readable>;
@@ -52,7 +55,75 @@ class S3StorageNotConfigured implements StorageProvider {
   }
 }
 
-export const storage: StorageProvider = config.storageDriver === 's3' ? new S3StorageNotConfigured() : new LocalStorage(config.storageDir);
+/**
+ * Vercel Blob. With a private store objects are never publicly readable; the API streams them to
+ * users after its own access checks. Keys contain a random UUID and are never overwritten.
+ */
+class VercelBlobStorage implements StorageProvider {
+  // Create the Blob store with access "Private". BLOB_ACCESS=public is only for public stores;
+  // objects are still served through the API, and keys contain a random UUID.
+  private access: 'private' | 'public' = process.env.BLOB_ACCESS === 'public' ? 'public' : 'private';
+  private wrap(e: unknown): never {
+    throw new AppError(503, 'STORAGE_ERROR', `File storage error: ${(e as Error).message}. Check the Blob store is connected to this project and its access type matches BLOB_ACCESS (default private).`);
+  }
+  async put(key: string, data: Buffer, mimeType: string) {
+    try {
+      await blobPut(key, data, { access: this.access, contentType: mimeType, addRandomSuffix: false, allowOverwrite: false });
+    } catch (e) {
+      this.wrap(e);
+    }
+  }
+  async get(key: string) {
+    let r;
+    try {
+      r = await blobGet(key, { access: this.access });
+    } catch (e) {
+      this.wrap(e);
+    }
+    if (!r || !r.stream) throw new AppError(404, 'NOT_FOUND', 'File not found in storage');
+    return Readable.fromWeb(r.stream as unknown as WebReadableStream<Uint8Array>);
+  }
+  async exists(key: string) {
+    try {
+      await blobHead(key);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+}
+
+/** Serverless without object storage: refuse clearly instead of writing to a disk that disappears. */
+class StorageUnavailable implements StorageProvider {
+  private fail(): never {
+    throw new AppError(503, 'STORAGE_NOT_CONFIGURED', 'File storage is not configured. In Vercel, open Storage → create a Blob store and connect it to this project, then redeploy.');
+  }
+  async put(): Promise<void> {
+    this.fail();
+  }
+  async get(): Promise<Readable> {
+    this.fail();
+  }
+  async exists(): Promise<boolean> {
+    return false;
+  }
+}
+
+function createStorage(): StorageProvider {
+  switch (config.storageDriver) {
+    case 'vercel-blob':
+      return new VercelBlobStorage();
+    case 's3':
+      return new S3StorageNotConfigured();
+    case 'none':
+      return new StorageUnavailable();
+    default:
+      return new LocalStorage(config.storageDir);
+  }
+}
+
+export const storage: StorageProvider = createStorage();
+export const storageAvailable = config.storageDriver === 'local' || config.storageDriver === 'vercel-blob';
 
 const SIGNATURES: Array<{ mime: string; test: (b: Buffer) => boolean }> = [
   { mime: 'image/jpeg', test: (b) => b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff },
