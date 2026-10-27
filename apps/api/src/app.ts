@@ -32,6 +32,7 @@ import { reportsRouter, portfolioRouter } from './routes/reports.js';
 import { searchRouter } from './routes/search.js';
 import { importsRouter } from './routes/imports.js';
 import { manpowerRouter } from './routes/manpower.js';
+import { scheduleRouter } from './routes/schedule.js';
 import { runAllJobs } from './jobs.js';
 import { assertCan } from './services/access.js';
 
@@ -92,6 +93,7 @@ export function createApp() {
   api.use('/projects/:projectId', periodsRouter);
   api.use('/projects/:projectId', reportsRouter);
   api.use('/projects/:projectId/manpower', manpowerRouter);
+  api.use('/projects/:projectId/schedule', scheduleRouter);
   api.use('/portfolio', portfolioRouter);
   api.use('/files', filesRouter);
   api.use('/my/tasks', myTasksRouter);

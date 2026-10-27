@@ -314,21 +314,52 @@ export function ProgressPage() {
   );
 }
 
+interface CpmRow {
+  id: string;
+  code: string;
+  status: string;
+  earlyStart: string;
+  earlyFinish: string;
+  totalFloat: number | null;
+  critical: boolean;
+  finishVarianceDays: number | null;
+}
+interface Cpm {
+  asOf: string;
+  dependencies: number;
+  forecastFinish?: string;
+  plannedFinish?: string | null;
+  slipDays?: number | null;
+  criticalPath: string[];
+  activities: CpmRow[];
+}
+
+const CRITICAL = '#e34948';
+
 export function SchedulePage() {
   const { can } = useAuth();
   const navigate = useNavigate();
+  const projectId = useProjectId();
   const q = useActivities();
-  const [view, setView] = useState<'all' | 'lookahead'>('all');
+  const cpmQ = useQuery({ queryKey: ['p', 'cpm', projectId], queryFn: () => api.get<Cpm>(`/projects/${projectId}/schedule/cpm`), retry: false });
+  const [view, setView] = useState<'all' | 'lookahead' | 'critical'>('all');
   const now = Date.now();
+  const cpm = useMemo(() => new Map((cpmQ.data?.activities ?? []).map((r) => [r.id, r])), [cpmQ.data]);
   const acts = useMemo(() => {
     const all = (q.data?.items ?? []).filter((a) => a.plannedStart && a.plannedFinish);
     if (view === 'all') return all;
+    if (view === 'critical') return all.filter((a) => cpm.get(a.id)?.critical);
     const horizon = now + 21 * DAY;
     return all.filter((a) => a.status !== 'COMPLETED' && toTime(a.plannedStart)! <= horizon && toTime(a.plannedFinish)! >= now - 7 * DAY);
-  }, [q.data, view, now]);
+  }, [q.data, view, now, cpm]);
   if (!can('progress.view')) return <PermissionDenied />;
-  const starts = acts.flatMap((a) => [toTime(a.plannedStart), toTime(a.actualStart)]).filter((x): x is number => x !== null);
-  const ends = acts.flatMap((a) => [toTime(a.plannedFinish), toTime(a.actualFinish), a.actualStart && !a.actualFinish ? now : null]).filter((x): x is number => x !== null);
+  const fcStart = (a: Activity) => toTime(cpm.get(a.id)?.earlyStart) ?? toTime(a.actualStart);
+  const fcEnd = (a: Activity) => {
+    const f = toTime(cpm.get(a.id)?.earlyFinish);
+    return f !== null ? f + DAY : (toTime(a.actualFinish) ?? (a.actualStart ? now : null));
+  };
+  const starts = acts.flatMap((a) => [toTime(a.plannedStart), fcStart(a)]).filter((x): x is number => x !== null);
+  const ends = acts.flatMap((a) => [toTime(a.plannedFinish), fcEnd(a)]).filter((x): x is number => x !== null);
   const min = view === 'lookahead' ? now - 7 * DAY : Math.min(...starts);
   const max = view === 'lookahead' ? now + 21 * DAY : Math.max(...ends);
   const span = Math.max(max - min, DAY);
@@ -349,27 +380,44 @@ export function SchedulePage() {
   const every = Math.max(1, Math.ceil(months.length / 14));
   months.forEach((m, i) => (m.show = i % every === 0));
   const undated = (q.data?.items ?? []).length - (q.data?.items ?? []).filter((a) => a.plannedStart && a.plannedFinish).length;
+  const c = cpmQ.data;
+  const criticalCount = (c?.activities ?? []).filter((r) => r.critical).length;
   return (
     <>
       <PageHeader
         title="Schedule"
-        subtitle="Planned bars come from activity planned dates; actual bars from recorded actual start/finish. The look-ahead shows unfinished work in the next three weeks."
+        subtitle="Planned bars come from planned dates. Forecast bars come from the critical path calculation: actual dates, progress, and the dependencies between activities, as of today."
         actions={
           <>
-            <Tabs value={view} onValueChange={(v) => setView(v as 'all' | 'lookahead')} tabs={[{ value: 'all', label: 'Full schedule' }, { value: 'lookahead', label: '3-week look-ahead' }]} />
+            <Tabs value={view} onValueChange={(v) => setView(v as 'all' | 'lookahead' | 'critical')} tabs={[{ value: 'all', label: 'Full schedule' }, { value: 'critical', label: 'Critical path' }, { value: 'lookahead', label: '3-week look-ahead' }]} />
+            {can('progress.manage') && <ImportScheduleButton />}
             {can('progress.manage') && <Button variant="outline" onClick={() => navigate('/schedule/activities/new')}>Add activity</Button>}
           </>
         }
       />
+      {c?.forecastFinish && (
+        <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <KpiCard label="Forecast finish" value={formatDate(c.forecastFinish)} tone={c.slipDays && c.slipDays > 0 ? 'danger' : 'success'} hint="From the critical path calculation" />
+          <KpiCard label="Planned finish" value={formatDate(c.plannedFinish)} tone="neutral" />
+          <KpiCard label="Forecast vs plan" value={c.slipDays === null || c.slipDays === undefined ? '—' : c.slipDays > 0 ? `${c.slipDays} days late` : c.slipDays < 0 ? `${-c.slipDays} days early` : 'On time'} tone={c.slipDays && c.slipDays > 0 ? 'danger' : 'success'} />
+          <KpiCard label="Critical activities" value={criticalCount} tone={criticalCount ? 'warning' : 'neutral'} hint="Zero float: any delay moves the finish date" />
+        </div>
+      )}
+      {cpmQ.error && <p className="mb-3 rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700">{(cpmQ.error as Error).message}</p>}
+      {c && c.dependencies === 0 && (q.data?.items.length ?? 0) > 1 && (
+        <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">No dependencies yet, so the critical path only reflects dates. Open an activity → <strong>Dependencies</strong> tab to link it to its predecessors.</p>
+      )}
       {q.isLoading ? (
         <LoadingBlock rows={8} />
       ) : !acts.length ? (
-        <EmptyState icon={<CalendarRange className="h-6 w-6" />} title={view === 'lookahead' ? 'Nothing scheduled in the look-ahead window' : 'No dated activities'} description="Activities need planned start and finish dates to appear on the Gantt chart." />
+        <EmptyState icon={<CalendarRange className="h-6 w-6" />} title={view === 'lookahead' ? 'Nothing scheduled in the look-ahead window' : view === 'critical' ? 'No critical activities' : 'No dated activities'} description="Activities need planned start and finish dates to appear on the Gantt chart." />
       ) : (
         <Card bodyClassName="p-0">
           <div className="flex flex-wrap items-center gap-4 border-b border-line px-4 py-2 text-xs text-muted">
             <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm" style={{ background: '#c5d8f2' }} /> Planned</span>
-            <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm" style={{ background: SERIES[0] }} /> Actual / in progress</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm" style={{ background: SERIES[0] }} /> Forecast / actual</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm" style={{ background: SERIES[1] }} /> Forecast late</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm" style={{ background: CRITICAL }} /> Critical</span>
             <span className="flex items-center gap-1.5"><Flag className="h-3.5 w-3.5 text-brand-600" /> Milestone</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-0.5 bg-red-500" /> Today</span>
             {undated > 0 && <span className="ml-auto">{undated} activity(ies) without planned dates are hidden</span>}
@@ -377,7 +425,7 @@ export function SchedulePage() {
           <div className="overflow-x-auto">
             <div className="min-w-[760px]">
               <div className="grid grid-cols-[260px_1fr] border-b border-line bg-surface-50 text-[11px] text-muted">
-                <div className="px-3 py-1.5 font-medium">Activity</div>
+                <div className="px-3 py-1.5 font-medium">Activity · float</div>
                 <div className="relative h-7">
                   {months.filter((m) => m.show).map((m) => (
                     <span key={m.t} className="absolute top-1.5 border-l border-line pl-1 whitespace-nowrap" style={{ left: pos(m.t) }}>
@@ -389,22 +437,26 @@ export function SchedulePage() {
               {acts.map((a) => {
                 const ps = toTime(a.plannedStart)!;
                 const pf = toTime(a.plannedFinish)!;
-                const as = toTime(a.actualStart);
-                const af = toTime(a.actualFinish) ?? (as !== null ? now : null);
-                const late = !a.actualFinish && pf < now;
+                const r = cpm.get(a.id);
+                const fs = fcStart(a);
+                const fe = fcEnd(a);
+                const late = (r?.finishVarianceDays ?? 0) > 0;
+                const color = r?.critical ? CRITICAL : late ? SERIES[1] : SERIES[0];
+                const float = r?.totalFloat;
                 return (
                   <div key={a.id} className="grid grid-cols-[260px_1fr] border-b border-line last:border-0 hover:bg-surface-50">
-                    <Link to={`/schedule/activities/${a.id}`} className="truncate px-3 py-2 text-sm hover:underline">
-                      <span className="font-medium text-navy-800">{a.code}</span> <span className="text-muted">{a.name}</span>
+                    <Link to={`/schedule/activities/${a.id}`} className="flex min-w-0 items-center gap-1.5 px-3 py-2 text-sm hover:underline">
+                      <span className="truncate"><span className="font-medium text-navy-800">{a.code}</span> <span className="text-muted">{a.name}</span></span>
+                      {r?.critical ? <Badge tone="danger" className="ml-auto shrink-0">Critical</Badge> : float !== null && float !== undefined ? <span className="ml-auto shrink-0 text-[11px] text-muted">{float} d</span> : null}
                     </Link>
-                    <div className="relative h-10" title={`${a.name}: planned ${formatDate(a.plannedStart)} – ${formatDate(a.plannedFinish)}, ${num(a.percentComplete).toFixed(0)}% complete`}>
+                    <div className="relative h-10" title={`${a.name}: planned ${formatDate(a.plannedStart)} – ${formatDate(a.plannedFinish)}${r ? `; forecast ${formatDate(r.earlyStart)} – ${formatDate(r.earlyFinish)}; float ${r.totalFloat ?? '—'} days` : ''}; ${num(a.percentComplete).toFixed(0)}% complete`}>
                       {months.map((m) => <span key={m.t} className="absolute inset-y-0 border-l border-dashed" style={{ left: pos(m.t), borderColor: GRID }} />)}
                       {a.isMilestone ? (
-                        <Flag className="absolute top-2.5 h-4 w-4 -translate-x-1/2 text-brand-600" style={{ left: pos(pf) }} aria-label={`Milestone ${formatDate(a.plannedFinish)}`} />
+                        <Flag className="absolute top-2.5 h-4 w-4 -translate-x-1/2" style={{ left: pos(fs ?? pf), color: r?.critical ? CRITICAL : undefined }} aria-label={`Milestone ${formatDate(r?.earlyFinish ?? a.plannedFinish)}`} />
                       ) : (
-                        <span className="absolute top-2 h-2.5 rounded" style={{ left: pos(ps), width: width(ps, pf), background: '#c5d8f2' }} />
+                        <span className="absolute top-2 h-2.5 rounded" style={{ left: pos(ps), width: width(ps, pf + DAY), background: '#c5d8f2' }} />
                       )}
-                      {as !== null && af !== null && <span className="absolute top-5 h-2.5 rounded" style={{ left: pos(as), width: width(as, af), background: late ? SERIES[1] : SERIES[0] }} />}
+                      {!a.isMilestone && fs !== null && fe !== null && <span className="absolute top-5 h-2.5 rounded" style={{ left: pos(fs), width: width(fs, fe), background: color }} />}
                       <span className="absolute inset-y-0 w-0.5 bg-red-500/70" style={{ left: pos(now) }} />
                     </div>
                   </div>
@@ -416,6 +468,11 @@ export function SchedulePage() {
       )}
     </>
   );
+}
+
+/** Placeholder until schedule import (task 2) lands. */
+function ImportScheduleButton() {
+  return null;
 }
 
 /* ------------------------------------------------------------------ Equipment utilisation */

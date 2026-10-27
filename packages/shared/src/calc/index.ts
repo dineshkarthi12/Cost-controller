@@ -5,3 +5,4 @@ export * from './measurement.js';
 export * from './procurement.js';
 export * from './stock.js';
 export * from './labour.js';
+export * from './schedule.js';

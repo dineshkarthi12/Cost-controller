@@ -711,8 +711,70 @@ function SubcontractActions({ ctx }: { ctx: ExtensionContext }) {
   );
 }
 
+interface Dep {
+  id: string;
+  type: string;
+  lagDays: number;
+  predecessor: { id: string; code: string; name: string };
+  successor: { id: string; code: string; name: string };
+}
+
+const DEP_TYPES = [
+  { value: 'FS', label: 'Finish → Start (FS)' },
+  { value: 'SS', label: 'Start → Start (SS)' },
+  { value: 'FF', label: 'Finish → Finish (FF)' },
+  { value: 'SF', label: 'Start → Finish (SF)' },
+];
+
+function DependenciesPanel({ ctx }: { ctx: ExtensionContext }) {
+  const qc = useQueryClient();
+  const base = `/projects/${ctx.projectId}/schedule/dependencies`;
+  const q = useQuery({ queryKey: ['p', 'deps', ctx.projectId], queryFn: () => api.get<Dep[]>(base) });
+  const [form, setForm] = useState<{ predecessorId: string | null; type: string; lagDays: string }>({ predecessorId: null, type: 'FS', lagDays: '0' });
+  const done = () => void qc.invalidateQueries({ queryKey: ['p'] });
+  const add = useMutation({ mutationFn: () => api.post(base, { predecessorId: form.predecessorId, successorId: ctx.record.id, type: form.type, lagDays: Number(form.lagDays || 0) }), onSuccess: () => { toast.success('Predecessor added'); setForm({ predecessorId: null, type: 'FS', lagDays: '0' }); done(); }, onError: (e: Error) => toast.error(e.message) });
+  const del = useMutation({ mutationFn: (id: string) => api.del(`${base}/${id}`), onSuccess: () => { toast.success('Dependency removed'); done(); }, onError: (e: Error) => toast.error(e.message) });
+  if (q.isLoading) return <LoadingBlock rows={3} />;
+  const preds = (q.data ?? []).filter((d) => d.successor.id === ctx.record.id);
+  const succs = (q.data ?? []).filter((d) => d.predecessor.id === ctx.record.id);
+  const lag = (d: Dep) => (d.lagDays ? ` ${d.lagDays > 0 ? '+' : ''}${d.lagDays} d` : '');
+  const canEdit = ctx.can('progress.manage');
+  const row = (d: Dep, other: { code: string; name: string }) => (
+    <li key={d.id} className="flex items-center justify-between gap-2 border-t border-line py-2 text-sm">
+      <span><strong>{other.code}</strong> {other.name} <Badge tone="info">{d.type}{lag(d)}</Badge></span>
+      {canEdit && <Button size="sm" variant="ghost" className="text-red-600" onClick={() => del.mutate(d.id)}>Remove</Button>}
+    </li>
+  );
+  return (
+    <div className="space-y-5">
+      <Notice>Dependencies drive the critical path on the Schedule page. Example: “Raft” must finish before “Columns” start = predecessor Raft, type FS.</Notice>
+      <div>
+        <h4 className="mb-1 text-xs font-semibold uppercase text-muted">Predecessors (must happen first)</h4>
+        {preds.length ? <ul>{preds.map((d) => row(d, d.predecessor))}</ul> : <p className="text-sm text-muted">None.</p>}
+      </div>
+      <div>
+        <h4 className="mb-1 text-xs font-semibold uppercase text-muted">Successors (depend on this activity)</h4>
+        {succs.length ? <ul>{succs.map((d) => row(d, d.successor))}</ul> : <p className="text-sm text-muted">None.</p>}
+      </div>
+      {canEdit && (
+        <div className="grid gap-2 rounded-lg border border-line p-3 sm:grid-cols-[2fr_1.4fr_0.7fr_auto] sm:items-end">
+          <Field label="Add predecessor"><RefSelect source="activities" value={form.predecessorId} onChange={(v) => setForm({ ...form, predecessorId: v })} /></Field>
+          <Field label="Type">
+            <select className="input" value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })}>
+              {DEP_TYPES.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
+            </select>
+          </Field>
+          <Field label="Lag (days)"><Input inputMode="numeric" value={form.lagDays} onChange={(e) => setForm({ ...form, lagDays: e.target.value })} /></Field>
+          <Button loading={add.isPending} disabled={!form.predecessorId || form.predecessorId === ctx.record.id} onClick={() => add.mutate()}>Add</Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export const EXTENSIONS: Record<string, Extension> = {
   mrs: { actions: (ctx) => <MrActions ctx={ctx} /> },
+  activities: { panels: (ctx) => [{ value: 'deps', label: 'Dependencies', render: () => <DependenciesPanel ctx={ctx} /> }] },
   prs: { actions: (ctx) => <PrActions ctx={ctx} />, panels: (ctx) => [{ value: 'budget', label: 'Budget check', render: () => <BudgetCheckPanel record={ctx.record} /> }] },
   purchaseOrders: {
     actions: (ctx) => <PoActions ctx={ctx} />,

@@ -338,6 +338,12 @@ async function main() {
       void b;
     }
   }
+  // Schedule logic (drives the critical path)
+  for (const [pred, succ, type, lag] of [
+    ['A-100', 'A-200', 'FS', 0], ['A-200', 'A-210', 'SS', 30], ['A-210', 'A-220', 'FS', 0], ['A-220', 'A-300', 'SS', 100],
+    ['A-300', 'A-310', 'SS', 60], ['A-220', 'A-320', 'SS', 20], ['A-300', 'A-400', 'SS', 80], ['A-400', 'A-500', 'SS', 10],
+    ['A-400', 'A-600', 'SS', 100], ['A-600', 'A-610', 'SS', 190], ['A-610', 'A-900', 'FS', 0], ['A-310', 'A-900', 'FS', 0],
+  ] as const) await A.post(`${P}/schedule/dependencies`, { predecessorId: acts[pred].id, successorId: acts[succ].id, type, lagDays: lag });
   console.log('✔ BOQ, activities, progress');
 
   // ───────── Subcontracts ─────────
