@@ -3,6 +3,8 @@ import type { Permission } from './permissions.js';
 export interface ModuleDef {
   key: string;
   label: string;
+  /** Short name for the navigation menu (falls back to label). */
+  navLabel?: string;
   path: string;
   icon: string; // lucide-react icon name
   permission: Permission | null; // null = every authenticated user
@@ -92,6 +94,56 @@ export const MODULES: ModuleDef[] = [
   m('Administration', 'integrations', 'Integrations', '/admin/integrations', 'Plug', 'integration.manage', 'Integration interfaces and imports', false),
   m('Administration', 'settings', 'Settings', '/admin/settings', 'Settings', 'settings.manage', 'Organisation, document types, workflows, modules', false),
 ];
+
+/** Compact names keep the navigation narrow; pages still show the full `label`. */
+const NAV_LABELS: Record<string, string> = {
+  approvals: 'Approvals',
+  tasks: 'Tasks',
+  team: 'Team',
+  manpower: 'Manpower',
+  diary: 'Site Diary',
+  progress: 'Progress',
+  schedule: 'Schedule',
+  evidence: 'Site Photos',
+  equipment: 'Equipment',
+  costcodes: 'WBS & Cost Codes',
+  boq: 'BOQ',
+  takeoff: 'Quantity Takeoff',
+  measurements: 'Measurement Book',
+  verification: 'MB Verification',
+  materials: 'Materials',
+  mr: 'Requisitions (MR)',
+  pr: 'Purchase Req. (PR)',
+  rfq: 'RFQ & Quotes',
+  po: 'Purchase Orders',
+  grn: 'Goods Receipt',
+  mir: 'Inspection (MIR)',
+  issues: 'Material Issues',
+  inventory: 'Inventory',
+  expenses: 'Expenses',
+  budget: 'Budget',
+  forecast: 'Forecast',
+  cashflow: 'Cash Flow',
+  payables: 'Payables',
+  monthend: 'Month-End',
+  subcontractors: 'Subcontractors',
+  subbills: 'Subcontract Bills',
+  clientbilling: 'Client Billing',
+  contracts: 'Contracts',
+  variations: 'Variations',
+  risks: 'Risks & Claims',
+  quality: 'Quality',
+  safety: 'Safety',
+  documents: 'Documents',
+  transmittals: 'Transmittals & RFIs',
+  reports: 'Reports',
+  closeout: 'Closeout',
+  users: 'Users & Roles',
+  audit: 'Audit Trail',
+  integrations: 'Integrations',
+  settings: 'Settings',
+};
+for (const m of MODULES) m.navLabel = NAV_LABELS[m.key] ?? m.label;
 
 export function moduleByKey(key: string): ModuleDef | undefined {
   return MODULES.find((x) => x.key === key);

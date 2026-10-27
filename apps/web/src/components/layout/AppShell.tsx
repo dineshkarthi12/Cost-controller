@@ -29,13 +29,13 @@ function Logo({ compact }: { compact?: boolean }) {
 function SidebarNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
   const modules = useVisibleModules();
   return (
-    <nav className="flex-1 overflow-y-auto px-2 py-3" aria-label="Main navigation">
+    <nav className="flex-1 overflow-y-auto px-2 py-2" aria-label="Main navigation">
       {MODULE_GROUPS.map((g) => {
         const items = modules.filter((m) => m.group === g);
         if (!items.length) return null;
         return (
-          <div key={g} className="mb-3">
-            {!collapsed && <p className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-wider text-blue-200/60">{g}</p>}
+          <div key={g} className="mb-2.5">
+            {!collapsed && <p className="truncate px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-blue-200/60">{g}</p>}
             <ul className="space-y-0.5">
               {items.map((m) => (
                 <li key={m.key}>
@@ -43,11 +43,11 @@ function SidebarNav({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?
                     to={m.path}
                     end={m.path === '/'}
                     onClick={onNavigate}
-                    title={collapsed ? m.label : undefined}
-                    className={({ isActive }) => cx('group flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors', isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-blue-100/85 hover:bg-white/10 hover:text-white', collapsed && 'justify-center px-2')}
+                    title={m.label}
+                    className={({ isActive }) => cx('group flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-[13px] font-medium transition-colors', isActive ? 'bg-brand-600 text-white shadow-sm' : 'text-blue-100/85 hover:bg-white/10 hover:text-white', collapsed && 'justify-center px-2')}
                   >
                     <ModuleIcon name={m.icon} className="h-4 w-4 shrink-0" />
-                    {!collapsed && <span className="truncate">{m.label}</span>}
+                    {!collapsed && <span className="truncate">{m.navLabel ?? m.label}</span>}
                   </NavLink>
                 </li>
               ))}
@@ -357,11 +357,11 @@ export function AppShell() {
         Skip to content
       </a>
       {/* Desktop sidebar */}
-      <aside className={cx('hidden shrink-0 flex-col bg-navy-900 lg:flex', collapsed ? 'w-[72px]' : 'w-64')}>
-        <div className={cx('flex h-16 items-center border-b border-navy-950 bg-white', collapsed ? 'justify-center px-2' : 'px-4')}>
+      <aside className={cx('hidden shrink-0 flex-col bg-navy-900 lg:flex', collapsed ? 'w-[64px]' : 'w-52')}>
+        <div className={cx('flex h-16 items-center border-b border-navy-950 bg-white', collapsed ? 'justify-center px-2' : 'px-3')}>
           <Logo compact={collapsed} />
         </div>
-        {!collapsed && <p className="bg-white px-4 pb-2 text-[10px] font-semibold uppercase tracking-wider text-navy-700">Construction Cost Control Management</p>}
+        {!collapsed && <p className="bg-white px-3 pb-2 text-[9px] font-semibold uppercase leading-tight tracking-wider text-navy-700">Construction Cost Control</p>}
         <SidebarNav collapsed={collapsed} />
         <button onClick={toggle} className="flex items-center justify-center gap-2 border-t border-white/10 py-3 text-xs text-blue-100/70 hover:text-white" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}
@@ -373,8 +373,8 @@ export function AppShell() {
       {drawer && (
         <div className="fixed inset-0 z-50 lg:hidden" role="dialog" aria-modal="true" aria-label="Navigation">
           <div className="absolute inset-0 bg-navy-950/50" onClick={() => setDrawer(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-[min(300px,85vw)] flex-col bg-navy-900 shadow-xl">
-            <div className="flex h-16 items-center justify-between border-b border-navy-950 bg-white px-4">
+          <aside className="absolute inset-y-0 left-0 flex w-[min(232px,78vw)] flex-col bg-navy-900 shadow-xl">
+            <div className="flex h-14 items-center justify-between border-b border-navy-950 bg-white px-3">
               <Logo />
               <IconButton label="Close navigation" onClick={() => setDrawer(false)}>
                 <X className="h-5 w-5" />
