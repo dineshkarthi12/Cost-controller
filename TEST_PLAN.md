@@ -46,6 +46,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Reports and exports | CSV, PDF and XLSX exports download from the UI with correctly named, non-empty files (`journey.spec.ts`) |
 | Responsive and mobile | Bottom navigation and capture entry are present, with no horizontal overflow on the dashboard, evidence, MR list or manpower pages at Pixel 7 size (`mobile.spec.ts`) |
 | Forms | Successful save navigates without a false "unsaved changes" prompt. Required-reason dialogs block empty reasons. (`journey.spec.ts`, `components.test.tsx`) |
+| Email | Real SMTP delivery to a local test server: admin test email, invitation with one-time link, approval-pending alert to the approver, password reset (unknown accounts get the same response and no email), nothing sent when the transaction rolls back, invite link shown when email is not set up (`email.test.ts`) |
 | Scheduled jobs | The cron endpoint runs only with the exact `CRON_SECRET` bearer token, and wrong or missing tokens get 404 (`auth.test.ts`) |
 | Vercel packaging | Checked by hand, not in CI: the build script ran under `VERCEL=1` against a fresh database, the function bundle was traced with `@vercel/nft`, and the handler was exercised in production mode (`docs/DEPLOY_VERCEL.md`). No real Vercel deployment was made. |
 | Containers | The API and web images were built and run with Docker. Migrations were applied, health was OK, admin login went through nginx, SPA deep links were served, and security headers were present. This was checked by hand, not in an automated suite. |
@@ -55,7 +56,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Suite | Result |
 |---|---|
 | `@toprock/shared` unit | **25 / 25 passed** |
-| `@toprock/api` integration | **51 / 51 passed** (7 files) |
+| `@toprock/api` integration | **57 / 57 passed** (8 files) |
 | `@toprock/web` components | **11 / 11 passed** (3 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |
@@ -73,7 +74,7 @@ Defects found by these tests and fixed during this phase:
 
 These have **not** been verified by an automated test:
 
-- **MFA (TOTP)** enrol, verify and disable flows, password reset and invitation acceptance (implemented; exercised only manually).
+- **MFA (TOTP)** enrol, verify and disable flows, and completing a password reset or invitation acceptance (the emails themselves are tested).
 - **Client billing**, receipts, retention release, credit notes, variations → budget revision, claims, PO amendment and short-close, RFQ comparison and award, equipment log costing, MPR own-labour costing. All of these run during the demo seed through the real API, but no assertions check their numbers.
 - **Offline mode**: draft persistence and the IndexedDB photo queue are untested in automation.
 - **File uploads**: magic-byte rejection, size limits and evidence geotag handling have no dedicated tests.

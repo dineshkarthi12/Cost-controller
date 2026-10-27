@@ -12,6 +12,7 @@ import { accessibleProjectIds, assertCan, can } from '../services/access.js';
 import { audit, diff } from '../services/audit.js';
 import { getOrgSettings, orgSettingsSchema } from '../services/settings.js';
 import { assertRefsInScope } from '../services/lookups.js';
+import { appLink, emailStatus, sendEmail, sendEmailNow } from '../services/email.js';
 
 export const adminRouter = Router();
 
@@ -81,10 +82,18 @@ adminRouter.post('/users/invite', async (req, res) => {
     await tx.invitation.create({ data: { orgId: ctx.orgId, email, name: data.name, roleCodes: data.roleCodes ?? [], projectIds: data.projectIds, tokenHash: sha256(token), invitedById: ctx.user.id, expiresAt: new Date(Date.now() + 7 * 86_400_000) } });
     await audit(tx, ctx, { action: 'USER_INVITED', entityType: 'user', entityId: user.id, summary: `${email} invited`, after: { roles: data.roleCodes, projects: data.projectIds } });
     const link = `${config.appBaseUrl}/accept-invitation?token=${token}`;
-    logger.info({ email }, 'invitation created (email transport not configured)');
-    return { user, inviteLink: config.isProd ? undefined : link };
+    return { user, link };
   });
-  res.status(201).json(out);
+  const inviter = ctx.user.name;
+  const mail = await sendEmail({
+    to: email,
+    subject: 'You are invited to TOPROCK GLOBAL Cost Control',
+    text: `Hello ${data.name},\n\n${inviter} has invited you to the TOPROCK GLOBAL construction cost control system.\n\nSet your password using the button below. The link works once and expires in 7 days.`,
+    action: { url: out.link, label: 'Accept invitation' },
+  });
+  if (!mail.sent) logger.info({ email, reason: mail.error }, 'invitation email not sent');
+  // Without working email the administrator must share the one-time link securely themselves.
+  res.status(201).json({ user: out.user, emailSent: mail.sent, emailError: mail.sent ? undefined : mail.error, inviteLink: mail.sent ? undefined : out.link });
 });
 
 adminRouter.patch('/users/:id', async (req, res) => {
@@ -415,6 +424,22 @@ adminRouter.get('/audit/entity', async (req, res) => {
   res.json(items.map((i) => ({ ...i, actorName: i.actorId ? users.get(i.actorId) : 'System' })));
 });
 
+// ───────── Email ─────────
+
+adminRouter.get('/email', async (req, res) => {
+  assertCan(ctxOf(req), 'integration.manage');
+  res.json(emailStatus());
+});
+
+/** Sends a test email to the signed-in administrator and reports the real result. */
+adminRouter.post('/email/test', async (req, res) => {
+  const ctx = ctxOf(req);
+  assertCan(ctx, 'integration.manage');
+  const r = await sendEmailNow({ to: ctx.user.email, subject: 'TOPROCK test email', text: `Hello ${ctx.user.name},\n\nThis is a test email from the TOPROCK GLOBAL cost control system. If you can read this, email delivery works.`, action: { url: appLink('/'), label: 'Open TOPROCK' } });
+  await audit(prisma, ctx, { action: 'EMAIL_TEST', entityType: 'integrationConfig', entityId: 'email', summary: r.sent ? `Test email sent to ${ctx.user.email}` : `Test email failed: ${r.error}` });
+  res.json({ ...r, to: ctx.user.email });
+});
+
 // ───────── Integrations (interfaces only) ─────────
 
 export const INTEGRATION_CATALOG = [
@@ -422,7 +447,6 @@ export const INTEGRATION_CATALOG = [
   { provider: 'sap', kind: 'ERP', name: 'SAP S/4HANA', fields: ['baseUrl', 'client'] },
   { provider: 'zoho-books', kind: 'ACCOUNTING', name: 'Zoho Books', fields: ['organisationId', 'region'] },
   { provider: 'payroll-generic', kind: 'PAYROLL', name: 'Payroll (CSV / API)', fields: ['endpoint'] },
-  { provider: 'smtp', kind: 'EMAIL', name: 'SMTP email', fields: ['host', 'port', 'from'] },
   { provider: 's3', kind: 'STORAGE', name: 'S3-compatible object storage', fields: ['bucket', 'region', 'endpoint'] },
   { provider: 'primavera', kind: 'SCHEDULING', name: 'Oracle Primavera P6 (XER import)', fields: ['notes'] },
   { provider: 'ms-project', kind: 'SCHEDULING', name: 'Microsoft Project (XML import)', fields: ['notes'] },

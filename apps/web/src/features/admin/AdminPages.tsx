@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { KeyRound, Pencil, Plug, Plus, RotateCcw, Save, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
+import { KeyRound, Mail, Pencil, Plug, Plus, RotateCcw, Save, ShieldCheck, Trash2, UserPlus } from 'lucide-react';
 import { DEFAULT_DOC_TYPES, MODULES, MODULE_GROUPS, PERMISSION_AREAS, SPECIAL_PERMISSIONS } from '@toprock/shared';
 import { api, type Paged } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
@@ -69,7 +69,7 @@ function UsersTab() {
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [edit, setEdit] = useState<{ id: string | null; form: typeof emptyUser } | null>(null);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
+  const [invited, setInvited] = useState<{ email: string; emailSent: boolean; emailError?: string; inviteLink?: string } | null>(null);
   const [deactivate, setDeactivate] = useState<UserRow | null>(null);
   const users = useQuery({ queryKey: ['admin', 'users', q, status], queryFn: () => api.get<UserRow[]>('/admin/users', { q, status }) });
   const roles = useRoles();
@@ -79,12 +79,11 @@ function UsersTab() {
     mutationFn: () => {
       const f = edit!.form;
       const body = { name: f.name, employeeId: f.employeeId || null, designation: f.designation || null, department: f.department || null, phone: f.phone || null, approvalLimit: f.approvalLimit || null, roleCodes: f.roleCodes };
-      return edit!.id ? api.patch(`/admin/users/${edit!.id}`, body) : api.post<{ inviteLink?: string }>('/admin/users/invite', { ...body, email: f.email, projectIds: f.projectIds });
+      return edit!.id ? api.patch(`/admin/users/${edit!.id}`, body) : api.post<{ inviteLink?: string; emailSent: boolean; emailError?: string }>('/admin/users/invite', { ...body, email: f.email, projectIds: f.projectIds }).then((r) => ({ ...r, email: f.email }));
     },
     onSuccess: (r) => {
       toast.success(edit?.id ? 'User updated' : 'Invitation created');
-      const link = (r as { inviteLink?: string } | undefined)?.inviteLink;
-      if (!edit?.id) setInviteLink(link ?? '');
+      if (!edit?.id && r) setInvited(r as { email: string; emailSent: boolean; emailError?: string; inviteLink?: string });
       setEdit(null);
       inv();
     },
@@ -160,15 +159,16 @@ function UsersTab() {
           </div>
         )}
       </Dialog>
-      <Dialog open={inviteLink !== null} onOpenChange={(o) => !o && setInviteLink(null)} title="Invitation created">
-        {inviteLink ? (
+      <Dialog open={!!invited} onOpenChange={(o) => !o && setInvited(null)} title={invited?.emailSent ? 'Invitation emailed' : 'Invitation created'}>
+        {invited?.emailSent ? (
+          <p className="text-sm">An invitation email was sent to <strong>{invited.email}</strong>. The link works once and expires in 7 days.</p>
+        ) : invited?.inviteLink ? (
           <div className="space-y-2 text-sm">
-            <p>Email delivery is not configured. Share this one-time link with the user through a secure channel. It expires in 7 days.</p>
-            <Input readOnly value={inviteLink} onFocus={(e) => e.target.select()} aria-label="Invitation link" />
+            <p>The invitation email could not be sent{invited.emailError ? ` (${invited.emailError})` : ''}. Share this one-time link with the user yourself, for example on WhatsApp. It expires in 7 days.</p>
+            <Input readOnly value={invited.inviteLink} onFocus={(e) => e.target.select()} aria-label="Invitation link" />
+            <Button size="sm" variant="outline" onClick={() => void navigator.clipboard?.writeText(invited.inviteLink!).then(() => toast.success('Link copied'))}>Copy link</Button>
           </div>
-        ) : (
-          <p className="text-sm">The invitation was recorded. In production the link is not shown here; configure an email transport to deliver it.</p>
-        )}
+        ) : null}
       </Dialog>
       <ConfirmDialog open={!!deactivate} onOpenChange={(o) => !o && setDeactivate(null)} title={`Deactivate ${deactivate?.name ?? ''}?`} message="The user is signed out everywhere and cannot sign in. Their records and history remain." requireReason tone="danger" confirmLabel="Deactivate" loading={action.isPending} onConfirm={(reason) => deactivate && action.mutate({ id: deactivate.id, act: 'deactivate', reason })} />
     </>
@@ -362,12 +362,21 @@ export function IntegrationsPage() {
   const jobs = useQuery({ queryKey: ['admin', 'imports'], queryFn: () => api.get<ImportJob[]>('/imports') });
   const save = useMutation({ mutationFn: () => api.put(`/admin/integrations/${edit!.provider}`, { config: edit!.values }), onSuccess: () => { toast.success('Configuration saved (not active)'); setEdit(null); void qc.invalidateQueries({ queryKey: ['admin', 'integrations'] }); }, onError: err });
   const test = useMutation({ mutationFn: (p: string) => api.post<{ lastTestResult: string }>(`/admin/integrations/${p}/test`), onSuccess: (r) => { toast.info(r.lastTestResult); void qc.invalidateQueries({ queryKey: ['admin', 'integrations'] }); }, onError: err });
+  const email = useQuery({ queryKey: ['admin', 'email'], queryFn: () => api.get<{ configured: boolean; host?: string; from?: string }>('/admin/email') });
+  const emailTest = useMutation({ mutationFn: () => api.post<{ sent: boolean; error?: string; to: string }>('/admin/email/test'), onSuccess: (r) => (r.sent ? toast.success(`Test email sent to ${r.to}. Check the inbox (and spam folder).`) : toast.error(`Test email failed: ${r.error}`)), onError: err });
   return (
     <Page>
-      <PageHeader title="Integrations & imports" subtitle="Connector interfaces are defined but no external connector is implemented in this release. Every integration is inactive; testing never contacts an external system." />
-      <div className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-        <strong>Status: no integration is active.</strong> Data moves in and out through Excel/CSV import (preview, validation, error report) and report exports. Secrets are never stored here; they belong in server environment variables.
-      </div>
+      <PageHeader title="Integrations & imports" subtitle="Email is built in. Accounting and ERP connectors are defined as interfaces only and are inactive; data moves through Excel/CSV import and report exports." />
+      <Card className="mb-4" title={<span className="flex items-center gap-2"><Mail className="h-4 w-4 text-muted" />Email (SMTP)</span>} subtitle="Invitations, password resets and approval alerts">
+        <div className="flex flex-wrap items-center justify-between gap-3 text-sm">
+          {email.data?.configured ? (
+            <span className="flex flex-wrap items-center gap-2"><Badge tone="success">Configured</Badge> Sending from <strong>{email.data.from}</strong> via {email.data.host}</span>
+          ) : (
+            <span className="flex flex-wrap items-center gap-2"><Badge tone="neutral">Not set up</Badge> Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS (and optionally EMAIL_FROM) in the hosting settings, then redeploy.</span>
+          )}
+          <Button size="sm" variant="outline" disabled={!email.data?.configured} loading={emailTest.isPending} onClick={() => emailTest.mutate()}>Send test email to me</Button>
+        </div>
+      </Card>
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         {q.isLoading && <LoadingBlock rows={3} />}
         {(q.data ?? []).map((i) => (

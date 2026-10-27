@@ -70,22 +70,22 @@ Each item is documented here and made configurable where practical (Settings →
 
 | # | Decision | Assumption taken | Configurable? |
 |---|---|---|---|
-| A1 | Is non-recoverable tax part of cost? | Tax is **excluded** from cost (assumed recoverable input tax) | Yes (`settings.taxIsCost`) |
+| A1 | Is non-recoverable tax part of cost? | **Confirmed by TOPROCK (27 Oct 2026):** GST is claimed as input tax credit, so tax is **excluded** from cost | Yes (`settings.taxIsCost`) |
 | A2 | When is material cost recognised? | Accrual on accepted GRN quantity, then actual on approved supplier invoice. Material issues do not re-post cost. | Documented. Changing it would need a migration of rules. |
 | A3 | Direct labour cost | Verified MPR lines for **own labour** post actual cost. Subcontractor labour is costed through their RA bills only, to avoid double counting. | Per-line `chargeable` flag |
 | A4 | Owned equipment cost | Approved equipment logs post actual cost at the internal hourly rate. Rented equipment is costed via supplier invoice or expense. | Per-equipment ownership |
 | A5 | Manpower uniqueness | One report per project + date + shift + contractor | Yes (`settings.manpowerUniqueness`) |
-| A6 | Retention / advance | Retention % applies to current gross work value. Advance recovery % applies to current gross work value, capped at the outstanding advance. | Per subcontract / project |
+| A6 | Retention / advance | **Confirmed by TOPROCK (27 Oct 2026):** retention % applies to each bill's current gross work value, stopping at the cap. Advance recovery % applies to current gross work value, capped at the outstanding advance. | Per subcontract / project |
 | A7 | Financial periods | Monthly calendar periods per project | Period table allows custom ranges |
 | A8 | Currency | Single base currency per project (default INR, ₹). Multi-currency is stored per document but not revalued. | Per project |
 | A9 | Document abbreviations | Seeded defaults (MR, PR, PO, GRN, MIR, MB, JMR, RA…) | Yes (Document Types) |
 | A10 | Approval chains | Seeded sensible defaults per document type with amount thresholds | Yes (Workflow settings) |
 | A11 | Storage | Local disk adapter in development. An S3-compatible adapter interface is defined but **not active**. | `STORAGE_DRIVER` env |
-| A12 | Email | In-app notifications are active. The email transport interface logs to the console until SMTP is configured. **Not active.** | `SMTP_*` env |
+| A12 | Email | SMTP email is implemented (invitations, password resets, approval and task alerts). TOPROCK will start with a personal Gmail and move to the official company mailbox after MD approval; only environment variables change. | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `EMAIL_FROM` |
 | A13 | Photo authenticity | Upload time and uploader are recorded by the server. Client-supplied capture time and GPS are stored as *unverified claims*. | n/a |
 
 ### 5. Out of scope / not claimed
 
-- No external accounting, ERP, payroll or scheduling integration is active. Only interfaces and a configuration register exist.
+- No external accounting, ERP, payroll or scheduling integration is active. **Confirmed by TOPROCK (27 Oct 2026): none is needed now**; data moves through Excel/CSV import and report exports.
 - No security certification or penetration test has been performed.
 - Docker files are provided, but Docker was not exercised in the build environment unless stated in `IMPLEMENTATION_STATUS.md`.

@@ -31,7 +31,23 @@ Project → **Settings → Environment Variables**:
 | `APP_BASE_URL` | `https://<your-project>.vercel.app` | Used in invitation and password-reset links |
 | `CORS_ORIGINS` | Same as `APP_BASE_URL` | Allowed browser origin |
 
-### 5. Redeploy
+### 5. (Optional) Email from your Gmail
+1. Google account → **Security** → turn on **2-Step Verification** → search **App passwords** → create one named "TOPROCK". Google shows a 16-letter password.
+2. Vercel → **Settings → Environment Variables**, add:
+
+| Name | Value |
+|---|---|
+| `SMTP_HOST` | `smtp.gmail.com` |
+| `SMTP_PORT` | `465` |
+| `SMTP_USER` | your Gmail address |
+| `SMTP_PASS` | the 16-letter app password (spaces are fine) |
+| `EMAIL_FROM` | `TOPROCK GLOBAL <your Gmail address>` |
+
+3. Redeploy, then in the app: **Integrations → Send test email to me**.
+
+To move to the company mailbox later, replace these five values with the ones from your IT team (for Microsoft 365: `smtp.office365.com`, port `587`) and redeploy. No code change is needed.
+
+### 6. Redeploy
 **Deployments** → the latest deployment → **⋯ → Redeploy**. The build log should show:
 - `prisma migrate deploy` → *All migrations have been successfully applied*
 - the seed → *Reference data ready…* (and the demo steps if `SEED_DEMO=true`)

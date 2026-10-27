@@ -30,6 +30,7 @@ export function NotificationsPage() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { projectId, setProjectId } = useAuth();
+  const emailStatus = useQuery({ queryKey: ['email-status'], queryFn: () => api.get<{ configured: boolean }>('/notifications/email-status'), staleTime: 300_000 });
   const list = useQuery({ queryKey: ['notifications', tab, page], queryFn: () => api.get<Paged<Row> & { unread: number }>('/notifications', { unread: tab === 'unread' ? true : undefined, page, pageSize: 30 }), enabled: tab !== 'prefs' });
   const prefs = useQuery({ queryKey: ['notifications', 'prefs'], queryFn: () => api.get<Pref[]>('/notifications/preferences'), enabled: tab === 'prefs' });
   const [draft, setDraft] = useState<Pref[]>([]);
@@ -75,7 +76,7 @@ export function NotificationsPage() {
             </TabPanel>
           ))}
           <TabPanel value="prefs" className="py-4">
-            <p className="mb-3 text-sm text-muted">Email delivery is not configured in this environment; email preferences are stored and take effect once an administrator configures SMTP.</p>
+            <p className="mb-3 text-sm text-muted">{emailStatus.data?.configured ? 'Ticked alerts are also sent to your email address.' : 'Email is not set up yet. Your email choices are saved and start working once an administrator sets up email.'}</p>
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs text-muted">

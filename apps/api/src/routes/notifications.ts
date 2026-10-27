@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { EMAIL_BY_DEFAULT } from '../services/notifications.js';
+import { emailConfigured } from '../services/email.js';
 import { z } from 'zod';
 import { prisma } from '../lib/prisma.js';
 import { pageParams, param, parseBody } from '../lib/http.js';
@@ -60,7 +62,12 @@ notificationsRouter.post('/read-all', async (req, res) => {
 notificationsRouter.get('/preferences', async (req, res) => {
   const ctx = ctxOf(req);
   const prefs = await prisma.notificationPreference.findMany({ where: { userId: ctx.user.id } });
-  res.json(NOTIFICATION_TYPES.map((type) => ({ type, inApp: prefs.find((p) => p.type === type)?.inApp ?? true, email: prefs.find((p) => p.type === type)?.email ?? false })));
+  res.json(NOTIFICATION_TYPES.map((type) => ({ type, inApp: prefs.find((p) => p.type === type)?.inApp ?? true, email: prefs.find((p) => p.type === type)?.email ?? EMAIL_BY_DEFAULT.has(type) })));
+});
+
+/** Whether outgoing email is set up (so the preferences screen can say so). */
+notificationsRouter.get('/email-status', (_req, res) => {
+  res.json({ configured: emailConfigured() });
 });
 
 notificationsRouter.put('/preferences', async (req, res) => {

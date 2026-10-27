@@ -23,7 +23,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 3 | Approvals & Workflow | Working · tested | Inbox, history, approve/return/reject/withdraw, delegation, SLA/overdue, escalation job, SoD, final-step approval limit | Escalation job not covered by tests |
 | 4 | Tasks & Issues | Working | My tasks, Kanban (drag and drop), list, calendar, contributors, dependencies, handover, recurring tasks, overdue alerts | No automated tests |
 | 5 | Team Management | Working | Workload chart, RACI matrix, profiles (skills, backup, manager), responsibility templates | — |
-| 6 | Notifications | Working | In-app notifications with links, read state and preferences | **Email delivery is not active** (no SMTP configured); messages are logged |
+| 6 | Notifications | Working · tested | In-app notifications with links, read state and preferences. Email alerts (approvals, returns, rejections, task assignments by default; others opt-in), sent only after the change commits | Email needs SMTP settings in the hosting environment |
 | 7 | Manpower | Working | MPR with workflow (verified own labour posts ACTUAL), attendance register with audited corrections, MPR from attendance, workers | Payroll export not implemented |
 | 8 | Daily Site Diary | Working | DPR with workflow, weather, stoppages, links to same-day registers | — |
 | 9 | Work Progress | Working | Weighted physical progress, planned vs actual, progress entries (never billable) | — |
@@ -62,9 +62,9 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 42 | Transmittals & RFIs | Working | Transmittals (send, acknowledge), RFIs | — |
 | 43 | Reports & Analytics | Working · tested (export) | 55 server-computed reports (the catalogue is filtered by each user's permissions); CSV, XLSX and branded PDF export (audited, demo-flagged) | No scheduled or emailed reports |
 | 44 | Project Closeout | Working | Checklist, live open-item indicators, final cost, lessons learned, approval, archive | — |
-| 45 | Users, Roles & Permissions | Working · tested | Invite (link shown in non-production), edit, deactivate (revokes sessions), role/permission matrix, reset to defaults | Invitation email not sent (no SMTP) |
+| 45 | Users, Roles & Permissions | Working · tested | Invite by email (one-time link shown to the admin if email is not set up), edit, deactivate (revokes sessions), role/permission matrix, reset to defaults | — |
 | 46 | Audit Trail | Working · tested | Append-only (database-enforced), filters, before/after diff | — |
-| 47 | Integrations | **Interface only** | Catalogue (Tally, SAP, Zoho Books, payroll, SMTP, S3, Primavera, MS Project), non-secret configuration, import history | **No integration is active.** "Test" always reports that the connector is not implemented. |
+| 47 | Integrations | Working (email) · Interface only (others) | Email (SMTP) status and "send test email". Accounting/ERP catalogue (Tally, SAP, Zoho Books, payroll, S3, Primavera, MS Project) with non-secret configuration; import history | **No accounting/ERP connector is active, and TOPROCK confirmed none is needed now.** |
 | 48 | Settings | Working | Business rules, visible modules, document numbering, workflow designer | — |
 
 ## Cross-cutting capabilities
@@ -81,7 +81,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | Mobile and responsive | Working · tested (layout) | Bottom navigation, camera capture, drawer, card lists, no horizontal overflow on tested pages |
 | Offline | Partial | Form drafts (localStorage) and a photo upload queue (IndexedDB) with sync status. **Other data entry is not available offline.** |
 | File storage | Working (local); Vercel Blob implemented | Local disk adapter. Vercel Blob adapter (private access) is used automatically when `BLOB_READ_WRITE_TOKEN` is set; it has not been tested against a real Blob store. The S3 adapter is an interface only and not active. |
-| Email | Not active | Requires SMTP configuration and a transport implementation |
+| Email | Working · tested | SMTP via nodemailer (Gmail, Microsoft 365 or any SMTP). Tested with real SMTP delivery to a local test server; delivery through Gmail has not been tested here (needs your app password). |
 | Containers | Working | API and web images built and run (`docker-compose.yml`). See `docs/OPERATIONS.md`. |
 | Vercel hosting | Configured, not yet deployed | `vercel.json`, a serverless function and a build script that migrates and seeds. Daily cron for jobs. Browser photo shrinking for the 4.5 MB request limit. The build, function bundle and handler were verified locally (`docs/DEPLOY_VERCEL.md`); a real Vercel deployment has not been done. |
 
@@ -91,4 +91,4 @@ Many registers use the shared **resource framework**: field metadata in `package
 2. A new RA bill does not include quantities from an earlier bill that is still in approval; prepare bills one at a time.
 3. Client billing, variations → budget, PO amendments, payments and MFA run correctly in the seeded demo but lack automated assertions (`TEST_PLAN.md` §5).
 4. No security penetration test, accessibility audit or load test has been performed. No compliance certification is claimed.
-5. Business assumptions A1–A13 in `PROJECT_PLAN.md` §4 still need confirmation by TOPROCK GLOBAL (tax as cost, retention basis, MPR uniqueness, and others).
+5. TOPROCK confirmed A1 (GST excluded from cost), A6 (retention on each bill's work value), A12 (Gmail first, company mail later) and that no accounting integration is needed now. The other assumptions in `PROJECT_PLAN.md` §4 keep their defaults.

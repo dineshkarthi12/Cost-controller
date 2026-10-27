@@ -29,7 +29,8 @@ export const config = {
   storageDir: path.resolve(env.STORAGE_DIR ?? './storage'),
   maxUploadBytes: num(env.MAX_UPLOAD_MB, 15) * 1024 * 1024,
   smtpUrl: env.SMTP_URL ?? '',
-  appBaseUrl: env.APP_BASE_URL ?? 'http://localhost:5173',
+  // Links in emails. On Vercel the production domain is known automatically when APP_BASE_URL is not set.
+  appBaseUrl: env.APP_BASE_URL?.trim() || (env.VERCEL_PROJECT_PRODUCTION_URL ? `https://${env.VERCEL_PROJECT_PRODUCTION_URL}` : env.VERCEL_URL ? `https://${env.VERCEL_URL}` : 'http://localhost:5173'),
   logLevel: isSeed ? 'warn' : (env.LOG_LEVEL ?? (isTest ? 'silent' : 'info')),
   relaxedLimits: isTest || isSeed,
   /** Disable the in-process job scheduler (tests). */

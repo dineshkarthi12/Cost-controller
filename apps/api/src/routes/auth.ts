@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { MODULES } from '@toprock/shared';
 import { prisma, transaction } from '../lib/prisma.js';
 import { config } from '../config.js';
+import { emailConfigured, sendEmail } from '../services/email.js';
 import { parseBody } from '../lib/http.js';
 import { badRequest, unauthorized, validationError, forbidden } from '../lib/errors.js';
 import { hashPassword, verifyPassword, randomToken, sha256, passwordPolicyErrors, generateTotpSecret, verifyTotp } from '../lib/crypto.js';
@@ -84,9 +85,11 @@ authRouter.post('/password/forgot', limiter, async (req, res) => {
   if (user && user.status === 'ACTIVE') {
     const token = randomToken();
     await prisma.passwordResetToken.create({ data: { userId: user.id, tokenHash: sha256(token), expiresAt: new Date(Date.now() + 60 * 60_000) } });
-    // Email transport is not active; the link is logged in development only.
-    if (!config.isProd) {
-      logger.info({ link: `${config.appBaseUrl}/reset-password?token=${token}` }, 'password reset link (development only)');
+    const link = `${config.appBaseUrl}/reset-password?token=${token}`;
+    void sendEmail({ to: user.email, subject: 'Reset your TOPROCK password', text: `Hello ${user.name},\n\nSomeone (hopefully you) asked to reset the password for your TOPROCK GLOBAL account. The link below works once and expires in 1 hour.\n\nIf you did not ask for this, ignore this email; your password stays the same.`, action: { url: link, label: 'Reset password' } });
+    // Development without email: show the link so the flow can be tested.
+    if (!config.isProd && !emailConfigured()) {
+      logger.info({ link }, 'password reset link (development only, email not configured)');
       devToken = token;
     }
     await audit(prisma, { orgId: user.orgId, ip: req.ip }, { action: 'PASSWORD_RESET_REQUESTED', entityType: 'user', entityId: user.id });
