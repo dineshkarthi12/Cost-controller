@@ -434,7 +434,19 @@ export const HOOKS: Record<string, ResourceHooks> = {
     },
   },
 
-  contracts: { include: { clauses: true, guarantees: true } },
+  contracts: {
+    include: { clauses: true, guarantees: true },
+    // Saving the form rewrites clause lines; keep the validation of clauses whose wording and
+    // interpretation are unchanged. Any change to either requires validating again.
+    async prepare(_tx, _ctx, _scope, data, existing) {
+      const incoming = lines(data, 'clauses');
+      if (!incoming || !existing?.clauses?.length) return;
+      for (const c of incoming) {
+        const prev = (existing.clauses as any[]).find((x) => x.clauseRef === c.clauseRef && x.sourceText === c.sourceText && (x.interpretation ?? null) === (c.interpretation ?? null));
+        if (prev?.validatedAt) Object.assign(c, { validatedById: prev.validatedById, validatedAt: prev.validatedAt });
+      }
+    },
+  },
   documents: { include: { revisions: { orderBy: { createdAt: 'desc' } } } },
   stores: {},
   boqItems: { include: { rateAnalysis: true } },

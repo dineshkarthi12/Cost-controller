@@ -26,8 +26,8 @@ Each project cost event writes one or more `CostLedgerEntry` rows `(project, cos
 | PO approved | `COMMITMENT +` PO net value (after discount), per line cost code |
 | PO amended (approved) | `COMMITMENT ±` delta between new and old open value |
 | PO cancelled / short-closed | `COMMITMENT −` remaining open value |
-| GRN approved | per accepted qty × PO rate: `ACCRUAL +v`, `COMMITMENT −v` |
-| Supplier invoice approved (PO-backed) | per matched GRN value `ACCRUAL −v`. Invoice net value is posted as `ACTUAL +`. Uninvoiced price variance stays in `ACTUAL`. |
+| GRN approved | per accepted qty × PO net rate: `ACCRUAL +v`, `COMMITMENT −v`. Quantity already invoiced ahead of receipt is excluded (it is already in `ACTUAL` and its commitment was relieved by the invoice). |
+| Supplier invoice approved (PO-backed) | per matched GRN value `ACCRUAL −v` (FIFO over approved GRN lines). Invoice net value is posted as `ACTUAL +`. Quantity invoiced beyond what was received relieves `COMMITMENT −` instead. Price variance stays in `ACTUAL`. |
 | Supplier invoice approved (non-PO) | `ACTUAL +` invoice net |
 | Subcontract approved | `COMMITMENT +` contract value |
 | Contractor RA bill certified | `ACTUAL +` current gross work value. `COMMITMENT −` min(current value, open commitment). |
@@ -128,6 +128,8 @@ netPayable          = currentWorkValue + tax − retention − advanceRecovery �
 - A step applies only if the document amount is within the step's `[minAmount, maxAmount]`.
 - An approver's `approvalLimit` (project membership, falling back to user; blank = no limit) must be ≥ the document amount for financial document types. The limit is checked for the approver who completes the **final** step (final authorisation). Earlier steps are recommendations.
 - Delegations are honoured only within their date range, and only if the delegate holds the approve permission for the module.
+- Approval inboxes never list a user's own submissions unless self-approval is allowed for that workflow.
+- Material requisitions (`requisition.*`) are separate from purchasing (`procurement.*`): site engineers and storekeepers raise MRs; only procurement roles create PRs, RFQs and POs.
 - Completing a task **never** approves the linked document.
 
 ## 9. Periods

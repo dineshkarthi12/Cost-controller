@@ -116,3 +116,16 @@ describe('stock ledger', () => {
     expect(await ledger(w.project.id)).toEqual(before);
   });
 });
+
+describe('append-only ledgers (database-enforced)', () => {
+  it('rejects updates and deletes on the cost ledger, stock ledger and audit trail', async () => {
+    const { prisma } = await import('./helpers.js');
+    const entry = await prisma.costLedgerEntry.findFirstOrThrow({ where: { projectId: w.project.id } });
+    await expect(prisma.costLedgerEntry.update({ where: { id: entry.id }, data: { amount: '1' } })).rejects.toThrow(/append-only/);
+    await expect(prisma.costLedgerEntry.delete({ where: { id: entry.id } })).rejects.toThrow(/append-only/);
+    const stock = await prisma.stockTransaction.findFirstOrThrow({ where: { projectId: w.project.id } });
+    await expect(prisma.stockTransaction.update({ where: { id: stock.id }, data: { qty: '0' } })).rejects.toThrow(/append-only/);
+    const ev = await prisma.auditEvent.findFirstOrThrow({ where: { projectId: w.project.id } });
+    await expect(prisma.auditEvent.delete({ where: { id: ev.id } })).rejects.toThrow(/append-only/);
+  });
+});

@@ -101,3 +101,18 @@ describe('document numbering', () => {
     for (let i = 1; i < seqs.length; i++) expect(seqs[i] - seqs[i - 1]).toBe(1);
   });
 });
+
+describe('contract clause validation', () => {
+  it('survives unrelated edits but is cleared when the interpretation changes', async () => {
+    const con = await w.c.pm.ok.post(`${w.P}/r/contracts`, { title: 'Main contract', type: 'MAIN', counterpartyId: w.client.id, value: '20000000', clauses: [{ clauseRef: '14.3', category: 'PAYMENT', sourceText: 'Payment within 30 days of certification.', interpretation: 'Client pays 30 days after IPC.' }] });
+    const clause = (await w.c.pm.ok.get(`${w.P}/r/contracts/${con.id}`)).clauses[0];
+    await w.c.pm.ok.post(`${w.P}/contract-clauses/${clause.id}/validate`);
+    const keep = await w.c.pm.ok.get(`${w.P}/r/contracts/${con.id}`);
+    const body = { title: 'Main contract (signed)', clauses: keep.clauses.map((c: any) => ({ clauseRef: c.clauseRef, category: c.category, sourceText: c.sourceText, interpretation: c.interpretation })) };
+    await w.c.pm.ok.patch(`${w.P}/r/contracts/${con.id}`, body);
+    expect((await w.c.pm.ok.get(`${w.P}/r/contracts/${con.id}`)).clauses[0].validatedAt).not.toBeNull();
+    body.clauses[0].interpretation = 'Client pays 45 days after IPC.';
+    await w.c.pm.ok.patch(`${w.P}/r/contracts/${con.id}`, body);
+    expect((await w.c.pm.ok.get(`${w.P}/r/contracts/${con.id}`)).clauses[0].validatedAt).toBeNull();
+  });
+});
