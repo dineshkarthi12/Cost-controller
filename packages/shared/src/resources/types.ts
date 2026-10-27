@@ -41,7 +41,8 @@ export type RefSource =
   | 'clientBills'
   | 'ncrs'
   | 'inspections'
-  | 'milestones';
+  | 'milestones'
+  | 'measurements';
 
 export interface FieldDef {
   name: string;

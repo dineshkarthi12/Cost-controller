@@ -565,7 +565,7 @@ const clientBill: DocHandler = {
   docType: 'CLIENT_BILL',
   area: 'clientbill',
   model: 'clientBill',
-  link: link('/client-billing'),
+  link: link('/client-billing/bills'),
   async validateSubmit(_tx, _ctx, e) {
     await Promise.resolve();
     if (D(e.grossToDate as string).isZero()) throw validationError('The bill has no work value');

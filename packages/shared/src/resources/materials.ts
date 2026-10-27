@@ -17,7 +17,7 @@ export const parties: ResourceDef = {
   fields: [
     { name: 'code', label: 'Code', type: 'text', required: true, list: true, sortable: true },
     { name: 'name', label: 'Name', type: 'text', required: true, list: true, sortable: true, span: 2 },
-    { name: 'kinds', label: 'Roles (CLIENT, CONSULTANT, SUPPLIER, SUBCONTRACTOR)', type: 'tags', required: true, list: true },
+    { name: 'kinds', label: 'Roles', type: 'tags', options: PARTY_KINDS, required: true, list: true, filter: true },
     { name: 'contactName', label: 'Contact person', type: 'text', list: true },
     { name: 'email', label: 'Email', type: 'text' },
     { name: 'phone', label: 'Phone', type: 'text', list: true },

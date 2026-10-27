@@ -53,9 +53,12 @@ function fieldSchema(f: FieldDef): z.ZodTypeAny {
     case 'ref':
       s = z.string().min(1, `${f.label} is required`).max(64);
       break;
-    case 'tags':
-      s = z.array(z.string().trim().min(1).max(200)).max(100);
+    case 'tags': {
+      let arr = f.options ? z.array(z.enum(f.options as [string, ...string[]])).max(100) : z.array(z.string().trim().min(1).max(200)).max(100);
+      if (f.required) arr = arr.min(1, `Choose at least one ${f.label.toLowerCase()}`);
+      s = arr;
       break;
+    }
     case 'lines': {
       const inner = buildObjectSchema(f.lines ?? [], 'create');
       let arr = z.array(inner).max(500);

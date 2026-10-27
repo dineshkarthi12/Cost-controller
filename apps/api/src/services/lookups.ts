@@ -45,6 +45,7 @@ export const LOOKUPS: Record<RefSource, LookupDef> = {
   clientBills: { model: 'clientBill', scope: 'project', label: (r) => `${r.number}`, search: ['number'], select: { id: true, number: true }, orderBy: { billSeq: 'desc' } },
   ncrs: { model: 'ncr', scope: 'project', label: (r) => `${r.number} — ${r.title}`, search: ['number', 'title'], select: { id: true, number: true, title: true }, orderBy: { number: 'desc' } },
   inspections: { model: 'inspection', scope: 'project', label: (r) => `${r.number} — ${r.title}`, search: ['number', 'title'], select: { id: true, number: true, title: true }, orderBy: { number: 'desc' } },
+  measurements: { model: 'measurement', scope: 'project', label: (r) => `${r.number} — ${r.location ?? ''}`, search: ['number', 'location'], select: { id: true, number: true, location: true }, orderBy: { number: 'desc' } },
   milestones: { model: 'billingMilestone', scope: 'project', label: (r) => `${r.name}`, search: ['name'], select: { id: true, name: true }, orderBy: { dueDate: 'asc' } },
 };
 

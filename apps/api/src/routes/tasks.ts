@@ -98,7 +98,7 @@ projectTasksRouter.post('/:id/handover', async (req, res) => {
     await tx.taskHandover.create({ data: { taskId: t.id, fromUserId: t.ownerId, toUserId, notes, createdById: ctx.user.id } });
     const u = await tx.task.update({ where: { id: t.id }, data: { ownerId: toUserId, handoverNotes: notes, status: t.status === 'BACKLOG' ? 'ASSIGNED' : t.status } });
     await audit(tx, ctx, { action: 'TASK_HANDOVER', entityType: 'task', entityId: t.id, projectId, summary: `${t.number} handed over`, reason: notes });
-    await notify(tx, { userIds: [toUserId], type: 'TASK_ASSIGNED', title: `Task handed over to you: ${t.title}`, body: notes, link: `/tasks?task=${t.id}`, projectId, entityType: 'task', entityId: t.id });
+    await notify(tx, { userIds: [toUserId], type: 'TASK_ASSIGNED', title: `Task handed over to you: ${t.title}`, body: notes, link: `/tasks/${t.id}`, projectId, entityType: 'task', entityId: t.id });
     return u;
   });
   res.json(out);
@@ -165,12 +165,12 @@ export async function taskAlerts() {
   const tasks = await prisma.task.findMany({ where: { status: { notIn: ['COMPLETED', 'CANCELLED'] }, ownerId: { not: null }, dueDate: { lte: addDays(d, 1) } } });
   for (const t of tasks) {
     const overdue = t.dueDate! < d;
-    await notify(prisma, { userIds: [t.ownerId!], type: overdue ? 'TASK_OVERDUE' : 'TASK_DUE_SOON', title: `${overdue ? 'Overdue' : 'Due soon'}: ${t.title}`, link: `/tasks?task=${t.id}`, projectId: t.projectId, entityType: 'task', entityId: t.id, dedupeKey: `task:${t.id}:${overdue ? 'overdue' : 'due'}:${d.toISOString().slice(0, 10)}` });
+    await notify(prisma, { userIds: [t.ownerId!], type: overdue ? 'TASK_OVERDUE' : 'TASK_DUE_SOON', title: `${overdue ? 'Overdue' : 'Due soon'}: ${t.title}`, link: `/tasks/${t.id}`, projectId: t.projectId, entityType: 'task', entityId: t.id, dedupeKey: `task:${t.id}:${overdue ? 'overdue' : 'due'}:${d.toISOString().slice(0, 10)}` });
     // Escalate to the reporting manager after the SLA (or 2 days overdue).
     if (overdue && (!t.overdueNotifiedAt || t.overdueNotifiedAt < addDays(d, -7))) {
       const owner = await prisma.user.findUnique({ where: { id: t.ownerId! } });
       if (owner?.reportingManagerId && d.getTime() - t.dueDate!.getTime() >= 2 * 86_400_000) {
-        await notify(prisma, { userIds: [owner.reportingManagerId], type: 'TASK_ESCALATED', title: `Escalation: ${owner.name}'s task is overdue — ${t.title}`, link: `/tasks?task=${t.id}`, projectId: t.projectId, dedupeKey: `task-esc:${t.id}:${d.toISOString().slice(0, 10)}` });
+        await notify(prisma, { userIds: [owner.reportingManagerId], type: 'TASK_ESCALATED', title: `Escalation: ${owner.name}'s task is overdue — ${t.title}`, link: `/tasks/${t.id}`, projectId: t.projectId, dedupeKey: `task-esc:${t.id}:${d.toISOString().slice(0, 10)}` });
         await prisma.task.update({ where: { id: t.id }, data: { overdueNotifiedAt: new Date() } });
       }
     }

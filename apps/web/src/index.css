@@ -1,0 +1,52 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --color-navy-950: #071a3e;
+  --color-navy-900: #0b2350;
+  --color-navy-800: #0f2a5f;
+  --color-navy-700: #163a7d;
+  --color-navy-600: #1f4b9a;
+  --color-brand-600: #1f5fbf;
+  --color-brand-500: #2f74d6;
+  --color-brand-100: #dce8fb;
+  --color-brand-50: #eef4fd;
+  --color-surface: #f4f6fa;
+  --color-line: #e3e8f0;
+  --color-ink: #16213a;
+  --color-muted: #5b6475;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+  body {
+    @apply bg-surface text-ink antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-brand-500;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-xl border border-line bg-white shadow-[0_1px_2px_rgba(16,24,40,0.04)];
+  }
+  .label {
+    @apply mb-1 block text-xs font-medium text-muted;
+  }
+  .input {
+    @apply block w-full rounded-lg border border-line bg-white px-3 py-2 text-sm text-ink placeholder:text-slate-400 focus:border-brand-500 focus:outline-none focus:ring-2 focus:ring-brand-100 disabled:bg-slate-50 disabled:text-slate-500;
+  }
+  .num {
+    @apply tabular-nums text-right;
+  }
+}
+
+.safe-bottom {
+  padding-bottom: env(safe-area-inset-bottom);
+}

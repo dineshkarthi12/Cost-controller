@@ -3,7 +3,7 @@ import type { RefSource } from '@toprock/shared';
 import { prisma } from '../lib/prisma.js';
 import { ctxOf } from '../middleware/auth.js';
 import { assertProjectAccess } from '../services/access.js';
-import { LOOKUPS, searchLookup } from '../services/lookups.js';
+import { LOOKUPS, resolveLabels, searchLookup } from '../services/lookups.js';
 import { notFound } from '../lib/errors.js';
 
 export const lookupsRouter = Router({ mergeParams: true });
@@ -17,6 +17,10 @@ lookupsRouter.get('/:source', async (req, res) => {
   const source = String(req.params.source) as RefSource;
   if (!LOOKUPS[source]) throw notFound('Lookup');
   if (LOOKUPS[source].scope === 'project' && !projectId) throw notFound('Lookup');
+  if (typeof req.query.ids === 'string' && req.query.ids) {
+    const labels = await resolveLabels(prisma, source, ctx.orgId, projectId, req.query.ids.split(',').slice(0, 100));
+    return res.json([...labels.entries()].map(([value, label]) => ({ value, label })));
+  }
   const extra: Record<string, unknown> = {};
   if (source === 'poLines' && typeof req.query.poId === 'string') extra.poId = req.query.poId;
   if (typeof req.query.status === 'string' && ['mrs', 'prs', 'purchaseOrders'].includes(source)) extra.status = { in: req.query.status.split(',') };

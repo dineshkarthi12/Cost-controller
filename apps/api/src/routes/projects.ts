@@ -165,13 +165,11 @@ projectsRouter.post('/:projectId/members', async (req, res) => {
       create: { projectId, userId: data.userId, projectRole: data.projectRole ?? null, approvalLimit: data.approvalLimit ?? null },
       update: { projectRole: data.projectRole ?? null, approvalLimit: data.approvalLimit ?? null, isActive: true },
     });
-    if (data.roleCodes.length) {
-      const roles = await tx.role.findMany({ where: { orgId: ctx.orgId, code: { in: data.roleCodes } } });
-      if (roles.length !== data.roleCodes.length) throw validationError('Unknown role code');
-      if (data.roleCodes.includes('SUPER_ADMIN')) throw validationError('Super Admin cannot be granted per project');
-      await tx.userRole.deleteMany({ where: { userId: data.userId, projectId } });
-      await tx.userRole.createMany({ data: roles.map((r) => ({ userId: data.userId, roleId: r.id, projectId })) });
-    }
+    const roles = await tx.role.findMany({ where: { orgId: ctx.orgId, code: { in: data.roleCodes } } });
+    if (roles.length !== data.roleCodes.length) throw validationError('Unknown role code');
+    if (data.roleCodes.includes('SUPER_ADMIN')) throw validationError('Super Admin cannot be granted per project');
+    await tx.userRole.deleteMany({ where: { userId: data.userId, projectId } });
+    if (roles.length) await tx.userRole.createMany({ data: roles.map((r) => ({ userId: data.userId, roleId: r.id, projectId })) });
     await audit(tx, ctx, { action: 'MEMBER_UPSERT', entityType: 'projectMember', entityId: member.id, projectId, summary: `${user.name} added/updated on project`, after: { ...data } });
     return member;
   });

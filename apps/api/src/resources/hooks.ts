@@ -423,13 +423,13 @@ export const HOOKS: Record<string, ResourceHooks> = {
     },
     async afterSave(tx, ctx, scope, record, existing) {
       if (record.ownerId && record.ownerId !== existing?.ownerId && record.ownerId !== ctx.user.id) {
-        await notify(tx, { userIds: [record.ownerId], type: 'TASK_ASSIGNED', title: `Task assigned: ${record.title}`, body: record.dueDate ? `Due ${String(record.dueDate.toISOString()).slice(0, 10)}` : undefined, link: `/tasks?task=${record.id}`, projectId: scope.projectId, entityType: 'task', entityId: record.id });
+        await notify(tx, { userIds: [record.ownerId], type: 'TASK_ASSIGNED', title: `Task assigned: ${record.title}`, body: record.dueDate ? `Due ${String(record.dueDate.toISOString()).slice(0, 10)}` : undefined, link: `/tasks/${record.id}`, projectId: scope.projectId, entityType: 'task', entityId: record.id });
       }
       if (record.status === 'IN_REVIEW' && existing?.status !== 'IN_REVIEW' && record.reviewerId) {
-        await notify(tx, { userIds: [record.reviewerId], type: 'TASK_REVIEW', title: `Task submitted for review: ${record.title}`, link: `/tasks?task=${record.id}`, projectId: scope.projectId, entityType: 'task', entityId: record.id });
+        await notify(tx, { userIds: [record.reviewerId], type: 'TASK_REVIEW', title: `Task submitted for review: ${record.title}`, link: `/tasks/${record.id}`, projectId: scope.projectId, entityType: 'task', entityId: record.id });
       }
       if (record.status === 'CHANGES_REQUESTED' && existing?.status !== 'CHANGES_REQUESTED' && record.ownerId) {
-        await notify(tx, { userIds: [record.ownerId], type: 'CHANGES_REQUESTED', title: `Changes requested: ${record.title}`, link: `/tasks?task=${record.id}`, projectId: scope.projectId, entityType: 'task', entityId: record.id });
+        await notify(tx, { userIds: [record.ownerId], type: 'CHANGES_REQUESTED', title: `Changes requested: ${record.title}`, link: `/tasks/${record.id}`, projectId: scope.projectId, entityType: 'task', entityId: record.id });
       }
     },
   },

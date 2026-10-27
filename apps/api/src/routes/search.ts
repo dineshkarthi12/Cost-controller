@@ -20,7 +20,7 @@ const PATHS: Record<string, string> = {
   siteDiary: '/site-diary',
   subcontract: '/subcontractors/contracts',
   contractorBill: '/subcontractor-bills',
-  clientBill: '/client-billing',
+  clientBill: '/client-billing/bills',
   variation: '/variations',
   claim: '/risks/claims',
   risk: '/risks',

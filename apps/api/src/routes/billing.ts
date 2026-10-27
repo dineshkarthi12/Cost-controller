@@ -159,6 +159,30 @@ billingRouter.get('/subcontract-summary', async (req, res) => {
   );
 });
 
+/** Open documents a payment (OUT) or receipt (IN) can be allocated to, for a party. */
+billingRouter.get('/outstanding', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'payable.view', projectId);
+  const partyId = String(req.query.partyId ?? '');
+  const direction = req.query.direction === 'IN' ? 'IN' : 'OUT';
+  if (direction === 'IN') {
+    const bills = await prisma.clientBill.findMany({ where: { projectId, status: { in: ['CERTIFIED', 'PARTIALLY_PAID'] } }, orderBy: { billSeq: 'asc' } });
+    return res.json(bills.map((b) => ({ kind: 'clientBillId', id: b.id, number: b.number, ref: b.invoiceNo, dueDate: b.dueDate, total: b.certifiedAmount ?? b.netAmount, outstanding: money(D(b.certifiedAmount ?? b.netAmount).minus(D(b.receivedAmount))) })));
+  }
+  const [inv, bills, exps] = await Promise.all([
+    prisma.supplierInvoice.findMany({ where: { projectId, supplierId: partyId, status: { in: ['APPROVED', 'PARTIALLY_PAID'] } }, orderBy: { invoiceDate: 'asc' } }),
+    prisma.contractorBill.findMany({ where: { projectId, contractorId: partyId, status: { in: ['CERTIFIED', 'PARTIALLY_PAID'] } }, orderBy: { billSeq: 'asc' } }),
+    prisma.expense.findMany({ where: { projectId, payeeId: partyId, status: 'APPROVED', paymentStatus: { not: 'PAID' } } }),
+  ]);
+  const paidExp = await prisma.paymentAllocation.groupBy({ by: ['expenseId'], where: { expenseId: { in: exps.map((e) => e.id) }, payment: { status: 'APPROVED' } }, _sum: { amount: true } });
+  res.json([
+    ...inv.map((i) => ({ kind: 'supplierInvoiceId', id: i.id, number: i.number, ref: i.invoiceNo, dueDate: i.dueDate, total: i.total, outstanding: money(D(i.total).minus(D(i.paidAmount))) })),
+    ...bills.map((b) => ({ kind: 'contractorBillId', id: b.id, number: b.number, ref: b.contractorInvoiceNo, dueDate: b.dueDate, total: b.netPayable, outstanding: money(D(b.netPayable).minus(D(b.paidAmount))) })),
+    ...exps.map((e) => ({ kind: 'expenseId', id: e.id, number: e.number, ref: e.externalRef, dueDate: null, total: e.total, outstanding: money(D(e.total).minus(D(paidExp.find((p) => p.expenseId === e.id)?._sum.amount ?? 0))) })),
+  ]);
+});
+
 // ───────── Client billing ─────────
 
 billingRouter.get('/client-bills', async (req, res) => {
