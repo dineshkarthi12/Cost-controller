@@ -43,6 +43,11 @@ approvalsRouter.get('/inbox', async (req, res) => {
   for (const r of pending) {
     const e = await eligibility(prisma, ctx, r);
     if (!e.ok) continue;
+    // Separation of duties: your own submissions are not yours to approve unless the workflow allows it.
+    if (r.submittedById === ctx.user.id) {
+      const def = await prisma.workflowDefinition.findUnique({ where: { id: r.definitionId }, select: { allowSelfApproval: true } });
+      if (!def?.allowSelfApproval) continue;
+    }
     const already = await prisma.approvalAction.findFirst({ where: { requestId: r.id, stepNo: r.currentStepNo, actorId: ctx.user.id, action: 'APPROVE' } });
     if (!already) mine.push({ ...r, onBehalfOf: e.onBehalfOf ?? null, selfSubmitted: r.submittedById === ctx.user.id });
   }

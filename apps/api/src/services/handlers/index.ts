@@ -123,7 +123,7 @@ function measurementHandler(docType: 'MB' | 'JMR'): DocHandler {
 
 const mr: DocHandler = {
   docType: 'MR',
-  area: 'procurement',
+  area: 'requisition',
   model: 'materialRequisition',
   link: link('/procurement/mr'),
   async validateSubmit(tx, _ctx, e) {
@@ -239,13 +239,18 @@ const grn: DocHandler = {
       if (D(l.acceptedQty).gt(0) && pl.materialId) {
         await postStock(tx, { projectId: g.projectId, storeId: g.storeId, materialId: pl.materialId, date: g.receivedDate, type: 'RECEIPT', qty: l.acceptedQty.toString(), unitCost: D(pl.rate).times(D(1).minus(D(pl.discountPct))).toFixed(4), batchNo: l.batchNo, refType: 'GRN', refId: g.id, refNumber: g.number, costCodeId: pl.costCodeId, createdById: ctx.user.id });
       }
+      // Quantity already invoiced ahead of receipt is already in ACTUAL (and its commitment already
+      // relieved), so it must not be accrued or relieved again — otherwise cost is counted twice.
+      const aheadQty = max(D(pl.invoicedQty).minus(D(pl.receivedQty)), 0);
+      const coveredQty = D(l.acceptedQty).lt(aheadQty) ? D(l.acceptedQty) : aheadQty;
+      const openQty = D(l.acceptedQty).minus(coveredQty);
+      const unitNet = D(pl.rate).times(D(1).minus(D(pl.discountPct)));
       await tx.purchaseOrderLine.update({ where: { id: pl.id }, data: { receivedQty: { increment: l.acceptedQty } } });
-      // Commitment relief is capped at the value not already relieved by invoicing.
-      const value = D(l.acceptedQty).times(D(pl.rate)).times(D(1).minus(D(pl.discountPct)));
-      const reliefQty = D(l.acceptedQty).minus(max(D(pl.invoicedQty).minus(D(pl.receivedQty)), 0));
-      const relief = max(reliefQty, 0).times(D(pl.rate)).times(D(1).minus(D(pl.discountPct)));
-      postings.push({ projectId: g.projectId, costCodeId: pl.costCodeId, date: g.receivedDate, kind: 'ACCRUAL', amount: money(value), sourceType: 'GRN', sourceId: g.id, sourceNumber: g.number, partyId: g.supplierId, description: pl.description });
-      postings.push({ projectId: g.projectId, costCodeId: pl.costCodeId, date: g.receivedDate, kind: 'COMMITMENT', amount: money(relief.neg()), sourceType: 'PO', sourceId: p.id, sourceNumber: p.number, partyId: g.supplierId, description: `Received on ${g.number}` });
+      if (coveredQty.gt(0)) await tx.grnLine.update({ where: { id: l.id }, data: { invoicedQty: coveredQty.toFixed(4) } });
+      if (openQty.gt(0)) {
+        postings.push({ projectId: g.projectId, costCodeId: pl.costCodeId, date: g.receivedDate, kind: 'ACCRUAL', amount: money(openQty.times(unitNet)), sourceType: 'GRN', sourceId: g.id, sourceNumber: g.number, partyId: g.supplierId, description: pl.description });
+        postings.push({ projectId: g.projectId, costCodeId: pl.costCodeId, date: g.receivedDate, kind: 'COMMITMENT', amount: money(openQty.times(unitNet).neg()), sourceType: 'PO', sourceId: p.id, sourceNumber: p.number, partyId: g.supplierId, description: `Received on ${g.number}` });
+      }
     }
     await postLedger(tx, ctx.user.id, postings);
     const updated = await tx.purchaseOrderLine.findMany({ where: { poId: p.id } });

@@ -401,7 +401,7 @@ const REPORTS: ReportDef[] = [
       key: `${kind}-register`,
       title: `${kind.toUpperCase()} Register`,
       group: 'Materials & Procurement',
-      permission: kind === 'grn' ? 'receiving.view' : 'procurement.view',
+      permission: kind === 'grn' ? 'receiving.view' : kind === 'mr' ? 'requisition.view' : 'procurement.view',
       description: `All ${kind.toUpperCase()} documents with status.`,
       dateFilter: true,
       async run(p) {

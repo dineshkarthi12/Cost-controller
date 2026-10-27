@@ -98,7 +98,7 @@ export const mrs: ResourceDef = {
   model: 'materialRequisition',
   label: 'Material Requisition',
   plural: 'Material Requisitions',
-  area: 'procurement',
+  area: 'requisition',
   projectScoped: true,
   docType: 'MR',
   titleField: 'number',

@@ -14,6 +14,7 @@ export const PERMISSION_AREAS = {
   measurement: 'Measurement Book & Verification',
   evidence: 'Site Evidence & Photos',
   material: 'Material Master & Stores',
+  requisition: 'Material Requisitions (MR)',
   procurement: 'MR / PR / RFQ / PO',
   receiving: 'GRN & Material Inspection',
   stock: 'Inventory, Issues & Reconciliation',
@@ -134,7 +135,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     description: 'Daily reporting, progress, measurement and evidence',
     permissions: [
       ...view('project', 'task', 'manpower', 'diary', 'progress', 'boq', 'measurement', 'evidence', 'material', 'procurement', 'receiving', 'stock', 'equipment', 'quality', 'safety', 'document', 'rfi', 'costcode', 'report'),
-      ...manage('manpower', 'diary', 'progress', 'measurement', 'evidence', 'procurement', 'equipment', 'quality', 'safety', 'rfi', 'task'),
+      ...manage('manpower', 'diary', 'progress', 'measurement', 'evidence', 'requisition', 'equipment', 'quality', 'safety', 'rfi', 'task'),
       ...approve('measurement', 'evidence', 'manpower', 'receiving', 'stock', 'equipment'),
     ],
   },
@@ -154,13 +155,13 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     code: 'STOREKEEPER',
     name: 'Storekeeper',
     description: 'Receipts, issues, transfers and stock counts',
-    permissions: [...view('project', 'task', 'material', 'procurement', 'costcode', 'evidence', 'report'), ...manage('receiving', 'stock', 'material', 'evidence', 'task')],
+    permissions: [...view('project', 'task', 'material', 'procurement', 'costcode', 'evidence', 'report'), ...manage('receiving', 'stock', 'material', 'requisition', 'evidence', 'task')],
   },
   {
     code: 'PROCUREMENT_OFFICER',
     name: 'Procurement Officer',
     description: 'PR, RFQ, quotations and purchase orders',
-    permissions: [...view('project', 'task', 'material', 'receiving', 'stock', 'costcode', 'budget', 'report', 'payable'), ...manage('procurement', 'material', 'task'), 'report.export'],
+    permissions: [...view('project', 'task', 'material', 'receiving', 'stock', 'costcode', 'budget', 'report', 'payable'), ...manage('procurement', 'requisition', 'material', 'task'), 'report.export'],
   },
   {
     code: 'SUBCONTRACTOR_MANAGER',

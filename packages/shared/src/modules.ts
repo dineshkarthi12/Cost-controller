@@ -56,7 +56,7 @@ export const MODULES: ModuleDef[] = [
   m('Quantities & BOQ', 'verification', 'Measurement Verification', '/measurement-verification', 'ClipboardCheck', 'measurement.view', 'Verification and certification queue'),
 
   m('Materials & Procurement', 'materials', 'Material Management', '/materials', 'Boxes', 'material.view', 'Material master, units and stores'),
-  m('Materials & Procurement', 'mr', 'Material Requisition (MR)', '/procurement/mr', 'FilePlus2', 'procurement.view', 'Site material requests'),
+  m('Materials & Procurement', 'mr', 'Material Requisition (MR)', '/procurement/mr', 'FilePlus2', 'requisition.view', 'Site material requests'),
   m('Materials & Procurement', 'pr', 'Purchase Requisition (PR)', '/procurement/pr', 'FileText', 'procurement.view', 'Purchase requisitions with budget check'),
   m('Materials & Procurement', 'rfq', 'RFQ & Quotations', '/procurement/rfq', 'Scale', 'procurement.view', 'Supplier quotations and comparison'),
   m('Materials & Procurement', 'po', 'Purchase Orders (PO)', '/procurement/po', 'ShoppingCart', 'procurement.view', 'Purchase orders and amendments'),

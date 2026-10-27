@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useForm, useFieldArray, Controller, type UseFormReturn } from 'react-hook-form';
 import { useBlocker } from 'react-router';
 import Decimal from 'decimal.js';
@@ -266,7 +266,9 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
   const schema = useMemo(() => buildObjectSchema(def.fields, mode), [def, mode]);
   const values = form.watch();
 
-  const blocker = useBlocker(({ currentLocation, nextLocation }) => form.formState.isDirty && !saved && currentLocation.pathname !== nextLocation.pathname);
+  // onSubmit usually navigates to the saved record before `saved` state updates, so the blocker reads a ref.
+  const submittingRef = useRef(false);
+  const blocker = useBlocker(({ currentLocation, nextLocation }) => form.formState.isDirty && !saved && !submittingRef.current && currentLocation.pathname !== nextLocation.pathname);
   useEffect(() => {
     const h = (e: BeforeUnloadEvent) => {
       if (form.formState.isDirty && !saved) e.preventDefault();
@@ -302,11 +304,13 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
       return;
     }
     setSaving(true);
+    submittingRef.current = true;
     try {
       await onSubmit({ ...body, ...(record?.updatedAt ? { expectedUpdatedAt: record.updatedAt } : {}) });
       setSaved(true);
       if (draftKey) clearDraft(draftKey);
     } catch (e) {
+      submittingRef.current = false;
       if (e instanceof ApiError) {
         const fe = e.fieldErrors;
         setErrors(Object.fromEntries(Object.entries(fe).map(([k, v]) => [k, v[0]])));

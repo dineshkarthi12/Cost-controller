@@ -11,3 +11,5 @@ test-results/
 *.log
 .DS_Store
 .vite/
+apps/api/storage-test/
+apps/api/storage-e2e/

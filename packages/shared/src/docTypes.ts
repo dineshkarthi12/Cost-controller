@@ -25,7 +25,7 @@ const d = (code: string, name: string, abbreviation: string, permissionArea: str
 export const DEFAULT_DOC_TYPES: DocTypeDef[] = [
   d('MPR', 'Manpower Report', 'MPR', 'manpower'),
   d('DPR', 'Daily Progress Report / Site Diary', 'DPR', 'diary'),
-  d('MR', 'Material Requisition', 'MR', 'procurement'),
+  d('MR', 'Material Requisition', 'MR', 'requisition'),
   d('PR', 'Purchase Requisition', 'PR', 'procurement', true, true),
   d('RFQ', 'Request for Quotation', 'RFQ', 'procurement', false),
   d('PO', 'Purchase Order', 'PO', 'procurement', true, true),

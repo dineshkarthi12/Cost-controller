@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import * as Popover from '@radix-ui/react-popover';
-import { Bell, Camera, ChevronDown, ChevronsLeft, ChevronsRight, Home, ListTodo, LogOut, Menu as MenuIcon, MoreHorizontal, Search, ShieldCheck, Stamp, User, WifiOff, X } from 'lucide-react';
+import { Bell, Camera, ChevronDown, ChevronsLeft, ChevronsRight, Home, ListTodo, LogOut, Menu as MenuIcon, MoreHorizontal, Search, ShieldCheck, Stamp, User, Users, WifiOff, X } from 'lucide-react';
 import { MODULES, MODULE_GROUPS, type ModuleDef } from '@toprock/shared';
 import { useAuth } from '../../lib/auth';
 import { api, type Paged } from '../../lib/api';
@@ -298,7 +298,7 @@ function MobileBottomNav({ onMore }: { onMore: () => void }) {
           Capture
         </NavLink>
       ) : (
-        item('/manpower', 'Manpower', <Camera className="h-5 w-5" />)
+        item('/manpower', 'Manpower', <Users className="h-5 w-5" />)
       )}
       {item('/approvals', 'Approvals', <Stamp className="h-5 w-5" />)}
       <button onClick={onMore} className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium text-muted">
