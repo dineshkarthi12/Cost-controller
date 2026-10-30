@@ -15,6 +15,23 @@ export interface RefOption {
 
 const PROJECT_SOURCES: RefSource[] = ['costCodes', 'wbsNodes', 'boqItems', 'activities', 'stores', 'subcontracts', 'purchaseOrders', 'poLines', 'grns', 'mrs', 'prs', 'contracts', 'documents', 'clientBills', 'ncrs', 'inspections', 'milestones', 'measurements'];
 
+/** Where to add the first record when a list is still empty (shown instead of a bare "No matches"). */
+const EMPTY_HINTS: Partial<Record<RefSource, string>> = {
+  clients: 'No clients yet. Add one under Materials → Suppliers & parties with role Client.',
+  parties: 'No parties yet. Add one under Materials → Suppliers & parties.',
+  suppliers: 'No suppliers yet. Add one under Materials → Suppliers & parties with role Supplier.',
+  subcontractors: 'No subcontractors yet. Add one under Subcontractors.',
+  materials: 'No materials yet. Add them under Materials.',
+  users: 'No users yet. Invite them under Users & Roles.',
+  costCodes: 'No cost codes yet. Add them under WBS & Cost Codes.',
+  wbsNodes: 'No WBS yet. Add it under WBS & Cost Codes.',
+  boqItems: 'No BOQ items yet. Add or import them under BOQ.',
+  activities: 'No activities yet. Add them under Schedule.',
+  equipment: 'No equipment yet. Add it under Equipment.',
+  stores: 'No stores yet. Add one under Materials → Stores.',
+  checklistTemplates: 'No templates yet. Add one under Quality → ITP templates.',
+};
+
 function lookupPath(source: RefSource, projectId: string | null) {
   return projectId ? `/projects/${projectId}/lookups/${source}` : PROJECT_SOURCES.includes(source) ? null : `/lookups/${source}`;
 }
@@ -122,7 +139,7 @@ export function RefSelect({ source, value, onChange, label, initialLabel, placeh
                 <Loader2 className="h-4 w-4 animate-spin" /> Loading…
               </li>
             )}
-            {!options.isLoading && items.length === 0 && <li className="px-2.5 py-2 text-sm text-muted">No matches</li>}
+            {!options.isLoading && items.length === 0 && <li className="px-2.5 py-2 text-sm text-muted">{!debounced && EMPTY_HINTS[source] ? EMPTY_HINTS[source] : 'No matches'}</li>}
             {items.map((o, i) => (
               <li
                 key={o.value}
