@@ -45,6 +45,7 @@ model Organisation {
   files          FileObject[]
   responsibility ResponsibilityAssignment[]
   checklistTpls  ChecklistTemplate[]
+  labourNorms    LabourNorm[]
 }
 
 model User {
@@ -404,6 +405,7 @@ model Project {
   rel_claim_project Claim[] @relation("Claim_projectId")
   rel_risk_project Risk[] @relation("Risk_projectId")
   rel_inspection_project Inspection[] @relation("Inspection_projectId")
+  dailyLabourReports DailyLabourReport[]
   rel_ncr_project Ncr[] @relation("Ncr_projectId")
   rel_safetyIncident_project SafetyIncident[] @relation("SafetyIncident_projectId")
   rel_toolboxTalk_project ToolboxTalk[] @relation("ToolboxTalk_projectId")
@@ -2998,4 +3000,76 @@ model CloseoutItem {
 
   // generated foreign keys (scripts/add-relations.py)
   owner User? @relation("CloseoutItem_ownerId", fields: [ownerId], references: [id], onDelete: Restrict)
+}
+
+/// Per-day output norm for one crew (e.g. 100 Rft/day per 1 mason + 1 helper), shared by all projects.
+model LabourNorm {
+  id             String   @id @default(cuid())
+  orgId          String
+  code           String
+  name           String
+  unit           String
+  outputPerDay   Decimal  @db.Decimal(14, 4)
+  masonsPerCrew  Int      @default(1)
+  helpersPerCrew Int      @default(1)
+  active         Boolean  @default(true)
+  notes          String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @default(now()) @updatedAt
+
+  org   Organisation      @relation(fields: [orgId], references: [id])
+  gangs DailyLabourGang[]
+
+  @@unique([orgId, code])
+}
+
+/// Daily labour report: the morning allocation (who does what) and the evening measurement.
+model DailyLabourReport {
+  id          String   @id @default(cuid())
+  projectId   String
+  date        DateTime @db.Date
+  status      String   @default("PLANNED") // PLANNED (morning) | COMPLETED (evening measured)
+  masonRate   Decimal  @db.Decimal(12, 2) // ₹ per day, copied from settings when the report is created
+  helperRate  Decimal  @db.Decimal(12, 2)
+  remarks     String?
+  masonDays   Int      @default(0)
+  helperDays  Int      @default(0)
+  labourCost  Decimal  @default(0) @db.Decimal(14, 2)
+  outputPct   Decimal? @db.Decimal(9, 4)
+  profitLoss  Decimal  @default(0) @db.Decimal(14, 2)
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project           @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  gangs   DailyLabourGang[]
+
+  @@unique([projectId, date])
+}
+
+model DailyLabourGang {
+  id            String   @id @default(cuid())
+  reportId      String
+  lineNo        Int
+  work          String
+  workers       String[]
+  masons        Int      @default(0)
+  helpers       Int      @default(0)
+  normId        String?
+  doneQty       Decimal? @db.Decimal(14, 4)
+  unit          String?
+  progress      String   @default("PLANNED") // PLANNED | IN_PROGRESS | DONE
+  outcome       String? // evening note as written, e.g. "70 Nos done", "20% pending"
+  labourCost    Decimal  @default(0) @db.Decimal(14, 2)
+  outputPct     Decimal? @db.Decimal(9, 4)
+  masonsNeeded  Decimal? @db.Decimal(10, 4)
+  helpersNeeded Decimal? @db.Decimal(10, 4)
+  result        String   @default("NOT_MEASURED") // NOT_MEASURED | PROFIT | OK | LOSS
+  profitLoss    Decimal  @default(0) @db.Decimal(14, 2)
+
+  report DailyLabourReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  norm   LabourNorm?       @relation(fields: [normId], references: [id], onDelete: Restrict)
+
+  @@index([reportId])
 }

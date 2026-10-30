@@ -16,6 +16,7 @@
     "db:reset": "prisma migrate reset --force --skip-seed && npm run db:seed"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.3.0",
     "@prisma/client": "6.19.3",
     "@toprock/shared": "*",
     "@vercel/blob": "^2.8.2",

@@ -1,4 +1,5 @@
 import type { ResourceDef } from './types.js';
+import { LABOUR_UNITS } from '../calc/productivity.js';
 
 export const SHIFTS = ['DAY', 'NIGHT', 'GENERAL'] as const;
 export const WORKER_CATEGORIES = ['SKILLED', 'SEMI_SKILLED', 'UNSKILLED', 'SUPERVISOR', 'STAFF'] as const;
@@ -83,6 +84,32 @@ export const manpowerReports: ResourceDef = {
         { name: 'amount', label: 'Cost', type: 'money', readOnly: true },
       ],
     },
+  ],
+};
+
+export const labourNorms: ResourceDef = {
+  key: 'labourNorms',
+  model: 'labourNorm',
+  label: 'Labour Norm',
+  plural: 'Labour Norms',
+  area: 'manpower',
+  projectScoped: false,
+  orgScoped: true,
+  titleField: 'name',
+  creatorField: 'createdById',
+  defaultSort: { field: 'code', dir: 'asc' },
+  searchFields: ['code', 'name'],
+  deletable: true,
+  description: 'Expected output per day for one crew, e.g. 100 Rft/day for 1 mason + 1 helper. Daily labour reports compare the work done with these norms to show output % and profit or loss.',
+  fields: [
+    { name: 'code', label: 'Code', type: 'text', required: true, list: true, sortable: true, maxLength: 30, placeholder: 'BRICK-NOS' },
+    { name: 'name', label: 'Work type', type: 'text', required: true, list: true, sortable: true, span: 2, placeholder: 'Brick installation' },
+    { name: 'outputPerDay', label: 'Output per day', type: 'decimal', required: true, min: 0.0001, list: true },
+    { name: 'unit', label: 'Unit', type: 'select', options: LABOUR_UNITS, required: true, list: true, filter: true },
+    { name: 'masonsPerCrew', label: 'Masons in crew', type: 'int', min: 0, max: 20, required: true, default: 1, list: true },
+    { name: 'helpersPerCrew', label: 'Helpers in crew', type: 'int', min: 0, max: 20, required: true, default: 1, list: true },
+    { name: 'active', label: 'Active', type: 'boolean', default: true, list: true, filter: true },
+    { name: 'notes', label: 'Notes', type: 'textarea', span: 3 },
   ],
 };
 

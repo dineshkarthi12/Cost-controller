@@ -128,6 +128,18 @@ async function main() {
       console.log(`✔ Password reset and account unlocked: ${email} (password length ${PASSWORD.length})`);
     }
   }
+  // Starter labour norms taken from TOPROCK's productivity workbook (29 Oct 2026). Existing norms are never changed.
+  const starterNorms = [
+    { code: 'ALU-FRAME', name: 'Aluminium frame work', unit: 'Rft', outputPerDay: '100', masonsPerCrew: 1, helpersPerCrew: 1 },
+    { code: 'PIPE-RUN', name: 'Pipe line routing & laying', unit: 'Rft', outputPerDay: '100', masonsPerCrew: 1, helpersPerCrew: 1 },
+    { code: 'PAINT-2C', name: 'Painting (two coats)', unit: 'Sq.ft', outputPerDay: '240', masonsPerCrew: 1, helpersPerCrew: 0 },
+    { code: 'GYP-BOARD', name: 'Board closing (gypsum / cement board)', unit: 'Sq.ft', outputPerDay: '120', masonsPerCrew: 1, helpersPerCrew: 1 },
+    { code: 'BRICK-NOS', name: 'Brick installation', unit: 'Nos', outputPerDay: '600', masonsPerCrew: 1, helpersPerCrew: 2 },
+    { code: 'SOFA-FAB', name: 'Sofa fabric fitting', unit: 'Nos', outputPerDay: '1', masonsPerCrew: 1, helpersPerCrew: 0 },
+  ];
+  const addedNorms = await prisma.labourNorm.createMany({ data: starterNorms.map((n) => ({ ...n, orgId: org.id, notes: 'From the TOPROCK productivity workbook (29 Oct 2026). Review and adjust to your own norms.' })), skipDuplicates: true });
+  if (addedNorms.count) console.log(`✔ ${addedNorms.count} starter labour norms`);
+
   if (!DEMO) return;
   if (await prisma.project.count({ where: { orgId: org.id } })) {
     console.log('Demo data already present — skipping. Run `npm run db:reset` to rebuild.');
@@ -569,6 +581,26 @@ async function main() {
     if (off < -1) await approve(dpr.id, ['rajesh.iyer']);
   }
   console.log('✔ Manpower, attendance, equipment, site diary');
+
+  // Daily labour report for today: morning allocation, then the evening measurement.
+  const normId = async (code: string) => (await prisma.labourNorm.findFirstOrThrow({ where: { orgId: org.id, code } })).id;
+  const dlrGangs = [
+    { work: 'Block work Tower A L8', workers: ['Murugan', 'Selvam', 'Arjun'], masons: 1, helpers: 2 },
+    { work: 'Conduit pipe routing L7', workers: ['Prakash', 'Bala'], masons: 1, helpers: 1 },
+    { work: 'Ceiling painting L5 lobby', workers: ['Kannan', 'Ravi', 'Saravanan'], masons: 1, helpers: 2 },
+    { work: 'Material shifting & site cleaning', workers: ['Gopal', 'Mani', 'Velu', 'Senthil'], masons: 0, helpers: 4 },
+  ];
+  const dlr = await K.post(`${P}/labour-reports`, { date: d(0), gangs: dlrGangs, remarks: 'Morning allocation' });
+  await K.put(`${P}/labour-reports/${dlr.id}`, {
+    status: 'COMPLETED',
+    gangs: [
+      { ...dlrGangs[0], normId: await normId('BRICK-NOS'), doneQty: '720', progress: 'DONE', outcome: '720 Nos done' },
+      { ...dlrGangs[1], normId: await normId('PIPE-RUN'), doneQty: '85', progress: 'IN_PROGRESS', outcome: '85 Rft, balance tomorrow' },
+      { ...dlrGangs[2], normId: await normId('PAINT-2C'), doneQty: '310', progress: 'DONE', outcome: '310 sq ft done' },
+      { ...dlrGangs[3], progress: 'IN_PROGRESS', outcome: 'On progress' },
+    ],
+  });
+  console.log('✔ Daily labour report');
 
   // ───────── Site evidence (needs file storage) ─────────
   if (storageAvailable) {

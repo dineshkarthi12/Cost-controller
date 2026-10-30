@@ -14,6 +14,9 @@ export const orgSettingsSchema = z.object({
   visibleModules: z.array(z.string()).default(MODULES.map((m) => m.key)),
   rounding: z.enum(['HALF_UP']).default('HALF_UP'),
   dataRetentionYears: z.number().int().min(1).max(50).default(10),
+  // Daily labour report day rates (defaults from TOPROCK's productivity workbook); each report keeps the rates it was created with.
+  masonDayRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default('1300'),
+  helperDayRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default('1000'),
 });
 
 export type OrgSettings = z.infer<typeof orgSettingsSchema>;

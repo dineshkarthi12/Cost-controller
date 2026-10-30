@@ -437,6 +437,8 @@ interface OrgSettings {
   autoBudgetRevisionFromVariation: boolean;
   visibleModules: string[];
   dataRetentionYears: number;
+  masonDayRate: string;
+  helperDayRate: string;
 }
 interface SettingsResp {
   org: { id: string; name: string; code: string; baseCurrency: string; timezone: string; isDemo: boolean };
@@ -537,6 +539,8 @@ function GeneralSettings() {
       <Card title="Site data rules">
         <div className="grid gap-3 sm:grid-cols-2">
           <Field label="Manpower report uniqueness"><Select options={[{ value: 'PROJECT_DATE_SHIFT_CONTRACTOR', label: 'Project + date + shift + contractor' }, { value: 'PROJECT_DATE_SHIFT', label: 'Project + date + shift' }]} value={d.settings.manpowerUniqueness} disabled={ro} onChange={(e) => ss({ manpowerUniqueness: e.target.value })} /></Field>
+          <Field label="Mason day rate (₹)" help="Used in new daily labour reports"><Input inputMode="decimal" value={d.settings.masonDayRate} disabled={ro} onChange={(e) => ss({ masonDayRate: e.target.value })} /></Field>
+          <Field label="Helper day rate (₹)" help="Used in new daily labour reports"><Input inputMode="decimal" value={d.settings.helperDayRate} disabled={ro} onChange={(e) => ss({ helperDayRate: e.target.value })} /></Field>
           <Field label="Duplicate measurements"><Select options={[{ value: 'BLOCK_UNLESS_REASON', label: 'Block unless a reason is given' }, { value: 'WARN', label: 'Warn only' }]} value={d.settings.measurementDuplicateMode} disabled={ro} onChange={(e) => ss({ measurementDuplicateMode: e.target.value })} /></Field>
         </div>
       </Card>

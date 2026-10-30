@@ -1,6 +1,6 @@
 # Test Plan
 
-This plan states what is tested automatically, how to run it, what the latest run produced, and what is **not** tested. Results below are from the final run on 2026-10-27 in the development container (Node 22, PostgreSQL 16, Chromium 1243). Nothing here is a claim of certification or of independent security testing.
+This plan states what is tested automatically, how to run it, what the latest run produced, and what is **not** tested. Results below are from the final run on 2026-10-30 in the development container (Node 22, PostgreSQL 16, Chromium 1243). Nothing here is a claim of certification or of independent security testing.
 
 ## 1. How to run
 
@@ -47,6 +47,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Responsive and mobile | Bottom navigation and capture entry are present, with no horizontal overflow on the dashboard, evidence, MR list or manpower pages at Pixel 7 size (`mobile.spec.ts`) |
 | Forms | Successful save navigates without a false "unsaved changes" prompt. Required-reason dialogs block empty reasons. (`journey.spec.ts`, `components.test.tsx`) |
 | Email | Real SMTP delivery to a local test server: admin test email, invitation with one-time link, approval-pending alert to the approver, password reset (unknown accounts get the same response and no email), nothing sent when the transaction rolls back, invite link shown when email is not set up (`email.test.ts`) |
+| Daily labour report | Productivity rules reproduce TOPROCK's workbook results (Kadara day: ₹27,100 labour, 120.55 % output, ₹2,917.50 profit; Ponram day: 34.06 %, ₹6,066.67 loss). One report per project per day, no future dates, norms checked by unit, day rates kept per report, read-only and non-member access refused, deletion needs an audited reason. The Excel export has the workbook's layout and live formulas; recalculating it in LibreOffice gave the same 260 cell values as the app (checked by hand, not in CI). Photo reading: clear message when no API key, draft returned without saving, known worker names sent with the photo, refusals and bad output handled, photos only (`productivity.test.ts`, `labour.test.ts`). Real handwriting reading by the Claude API was **not** tested (no API key available) |
 | Client billing and receivables | The client bill is computed on the server from certified quantities (work value, 5 % retention on this bill's work value, 18 % tax, net). One open bill at a time. Client certification only after internal approval and never above the claim. AR aging buckets by days past due, with retention receivable. Receipts move the bill to partly paid and then paid; over-allocation, OUT payments against client bills and self-approval are refused. Client billing posts nothing to the cost ledger (`commercial.test.ts`) |
 | Variations → budget | A submitted variation shows as exposure, not budget. Approval sets the approved value and drafts a budget revision for the cost impact; BAC changes only when that revision is approved. The approved value is billed to the client on the next bill (`commercial.test.ts`) |
 | PO amendment and short-close | Amendments cannot remove lines, only one can be in progress, and nothing posts until approval. Approval changes the commitment by the change in open value (70 → 120 bags open = +₹20,000). Short-close needs procurement approval rights and a reason, releases the remaining commitment, keeps the accrual for goods received, and blocks later amendments (`commercial.test.ts`) |
@@ -61,8 +62,8 @@ The API integration tests only accept a test database whose name ends in `_test`
 
 | Suite | Result |
 |---|---|
-| `@toprock/shared` unit | **34 / 34 passed** (3 files) |
-| `@toprock/api` integration | **89 / 89 passed** (12 files) |
+| `@toprock/shared` unit | **41 / 41 passed** (4 files) |
+| `@toprock/api` integration | **103 / 103 passed** (13 files) |
 | `@toprock/web` components | **11 / 11 passed** (3 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |
@@ -82,6 +83,7 @@ These have **not** been verified by an automated test:
 
 - **MFA (TOTP)** enrol, verify and disable flows, and completing a password reset or invitation acceptance (the emails themselves are tested).
 - **Retention release** payments, credit/debit notes, client bill disputes, claims, RFQ comparison and award, equipment log costing and MPR own-labour costing. All of these run during the demo seed through the real API, but no assertions check their numbers.
+- **Photo reading of labour sheets** with a real Claude API key, and its accuracy on handwriting.
 - **Offline mode**: draft persistence and the IndexedDB photo queue are untested in automation.
 - **File uploads**: magic-byte rejection, size limits and evidence geotag handling have no dedicated tests.
 - **Escalation and recurring-task jobs** (time-based) are untested.

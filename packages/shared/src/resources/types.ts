@@ -42,6 +42,7 @@ export type RefSource =
   | 'ncrs'
   | 'inspections'
   | 'checklistTemplates'
+  | 'labourNorms'
   | 'milestones'
   | 'measurements';
 

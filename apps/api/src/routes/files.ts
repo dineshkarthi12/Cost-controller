@@ -197,7 +197,7 @@ projectFilesRouter.post('/evidence/:id/review', async (req, res) => {
 
 // ───────── Generic attachments ─────────
 
-const ATTACHABLE = ['purchaseOrder', 'materialRequisition', 'purchaseRequisition', 'grn', 'mir', 'supplierInvoice', 'expense', 'payment', 'subcontract', 'contractorBill', 'clientBill', 'variation', 'claim', 'contract', 'measurement', 'manpowerReport', 'siteDiary', 'inspection', 'ncr', 'safetyIncident', 'rfi', 'transmittal', 'task', 'risk', 'budgetRevision', 'boqItem', 'equipmentLog', 'closeout', 'reportingPeriod'];
+const ATTACHABLE = ['purchaseOrder', 'materialRequisition', 'purchaseRequisition', 'grn', 'mir', 'supplierInvoice', 'expense', 'payment', 'subcontract', 'contractorBill', 'clientBill', 'variation', 'claim', 'contract', 'measurement', 'manpowerReport', 'siteDiary', 'inspection', 'ncr', 'safetyIncident', 'rfi', 'transmittal', 'task', 'risk', 'budgetRevision', 'boqItem', 'equipmentLog', 'closeout', 'reportingPeriod', 'dailyLabourReport'];
 
 projectFilesRouter.get('/attachments', async (req, res) => {
   const ctx = ctxOf(req);

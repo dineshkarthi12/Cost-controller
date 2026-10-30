@@ -29,6 +29,7 @@ const EMPTY_HINTS: Partial<Record<RefSource, string>> = {
   activities: 'No activities yet. Add them under Schedule.',
   equipment: 'No equipment yet. Add it under Equipment.',
   stores: 'No stores yet. Add one under Materials → Stores.',
+  labourNorms: 'No labour norms yet. Add them under Manpower → Labour norms.',
   checklistTemplates: 'No templates yet. Add one under Quality → ITP templates.',
 };
 

@@ -47,7 +47,14 @@ Project → **Settings → Environment Variables**:
 
 To move to the company mailbox later, replace these five values with the ones from your IT team (for Microsoft 365: `smtp.office365.com`, port `587`) and redeploy. No code change is needed.
 
-### 6. Redeploy
+### 6. (Optional) Read photos of handwritten labour sheets
+**Manpower → Daily labour report** can fill the form from a photo of the site's handwritten sheet. This uses the Claude API from Anthropic:
+1. Create an API key at console.anthropic.com (this needs a paid Anthropic account; each photo is usually a few rupees, depending on Anthropic's prices).
+2. Vercel → **Settings → Environment Variables** → add `ANTHROPIC_API_KEY` with the key → Redeploy.
+
+Photos are sent to Anthropic to be read. Without the key, the photo button is switched off and reports are typed by hand; everything else works the same.
+
+### 7. Redeploy
 **Deployments** → the latest deployment → **⋯ → Redeploy**. The build log should show:
 - `prisma migrate deploy` → *All migrations have been successfully applied*
 - the seed → *Reference data ready…* (and the demo steps if `SEED_DEMO=true`)

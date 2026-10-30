@@ -1,6 +1,6 @@
 # Implementation Status
 
-As of 2026-10-27. Status words have fixed meanings:
+As of 2026-10-30. Status words have fixed meanings:
 
 | Status | Meaning |
 |---|---|
@@ -24,7 +24,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 4 | Tasks & Issues | Working | My tasks, Kanban (drag and drop), list, calendar, contributors, dependencies, handover, recurring tasks, overdue alerts | No automated tests |
 | 5 | Team Management | Working | Workload chart, RACI matrix, profiles (skills, backup, manager), responsibility templates | — |
 | 6 | Notifications | Working · tested | In-app notifications with links, read state and preferences. Email alerts (approvals, returns, rejections, task assignments by default; others opt-in), sent only after the change commits | Email needs SMTP settings in the hosting environment |
-| 7 | Manpower | Working | MPR with workflow (verified own labour posts ACTUAL), attendance register with audited corrections, MPR from attendance, workers | Payroll export not implemented |
+| 7 | Manpower | Working · tested | MPR with workflow (verified own labour posts ACTUAL), attendance register with audited corrections, MPR from attendance, workers. **Daily labour report**: morning allocation (gangs, workers, masons/helpers) and evening measurement against per-day labour norms, with output %, mason/helper needed, labour cost and profit/loss per gang and per day (same rules as TOPROCK's productivity workbook, checked against its results); management summary across projects; Excel export in the workbook's layout with live formulas; optional reading of handwritten sheet photos with the Claude API | Payroll export not implemented. Photo reading needs `ANTHROPIC_API_KEY` and has been tested only with a simulated reader (no key was available); handwriting reading accuracy is unverified. The daily labour report does not post to the cost ledger (MPR does) |
 | 8 | Daily Site Diary | Working | DPR with workflow, weather, stoppages, links to same-day registers | — |
 | 9 | Work Progress | Working | Weighted physical progress, planned vs actual, progress entries (never billable) | — |
 | 10 | Planning & Schedule | Working · tested | Activities, baselines, dependencies (FS/SS/FF/SF with lag, loops refused), critical path (CPM) forecast from the data date with total and free float, forecast vs planned finish, Gantt with critical activities highlighted, 3-week look-ahead, milestones, delays. Import from Microsoft Project XML and Primavera P6 XER with preview (activities matched by code, links replaced) | Calendar days only (no working-day or holiday calendars); no resource levelling |
