@@ -3018,6 +3018,8 @@ model LabourNorm {
   outputPerDay   Decimal  @db.Decimal(14, 4)
   masonsPerCrew  Int      @default(1)
   helpersPerCrew Int      @default(1)
+  /// Other words for this work, comma separated ("screed, screeding, floor screed"): report rows naming them use this norm.
+  keywords       String?
   active         Boolean  @default(true)
   notes          String?
   createdById    String?

@@ -261,30 +261,44 @@ export async function labourTemplate(norms: Array<{ code: string; name: string; 
 
 // Words that say nothing about the kind of work: places, floors and filler.
 const GENERIC = new Set(['work', 'works', 'done', 'and', 'for', 'the', 'with', 'from', 'area', 'floor', 'level', 'side', 'room', 'hall', 'first', 'second', 'third', 'ground', 'balance', 'pending', 'complete', 'completed', 'installed', 'progress']);
-const stem = (w: string) => w.replace(/ing$/, '').replace(/s$/, '');
+const stem = (w: string) => w.replace(/s$/, '').replace(/ing$/, '').replace(/e$/, '');
 export function workWords(s: string): string[] {
-  return s.toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !GENERIC.has(w)).map(stem);
+  return s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !GENERIC.has(w) && !/^\d/.test(w)).map(stem);
+}
+
+type Nameable = { name: string; unit: string; code?: string; keywords?: string | null; active?: boolean };
+function bestOf<N extends Nameable>(have: Set<string>, unit: string | null, norms: N[]): { norm?: N; score: number; tie: boolean } {
+  let norm: N | undefined;
+  let score = 0;
+  let tie = false;
+  for (const n of norms) {
+    if ((unit && n.unit !== unit) || n.active === false) continue;
+    // The norm's name or any of its other words, whichever names the most of the work.
+    let s = 0;
+    for (const phrase of [n.name, ...(n.keywords ?? '').split(',')]) {
+      const need = [...new Set(workWords(phrase))];
+      if (need.length && need.every((w) => have.has(w))) s = Math.max(s, need.length);
+    }
+    if (!s) continue;
+    if (s > score) [norm, score, tie] = [n, s, false];
+    else if (s === score && n !== norm) tie = true;
+  }
+  return { norm, score, tie };
 }
 
 /**
- * The per-day norm whose name describes this work: every telling word of the norm's name appears
- * in the work ("Screeding" → "Floor screeding 2nd floor", "Brick installation" → "Glue filling +
- * brick installation"). The unit must agree when the row has one. The norm naming the most words
- * wins; a tie between different norms matches nothing, so a wrong norm is never picked.
+ * The per-day norm whose name (or other words) describes this work: every telling word of the name
+ * appears in the work ("Screeding" → "Floor screeding 2nd floor", "Brick installation" → "Glue
+ * filling + brick installation"). The unit must agree when the row has one. The norm naming the most
+ * words wins; a tie between different norms matches nothing, so a wrong norm is never picked.
+ * The organisation's own norms are tried before the standard library (codes STD-…).
  */
-export function normByName<N extends { name: string; unit: string }>(work: string, unit: string | null, norms: N[]): N | undefined {
+export function normByName<N extends Nameable>(work: string, unit: string | null, norms: N[]): N | undefined {
   const have = new Set(workWords(work));
-  let best: N | undefined;
-  let bestScore = 0;
-  let tie = false;
-  for (const n of norms) {
-    if (unit && n.unit !== unit) continue;
-    const need = [...new Set(workWords(n.name))];
-    if (!need.length || !need.every((w) => have.has(w))) continue;
-    if (need.length > bestScore) [best, bestScore, tie] = [n, need.length, false];
-    else if (need.length === bestScore) tie = true;
-  }
-  return tie ? undefined : best;
+  const own = bestOf(have, unit, norms.filter((x) => !x.code?.startsWith('STD-')));
+  if (own.norm) return own.tie ? undefined : own.norm;
+  const std = bestOf(have, unit, norms.filter((x) => x.code?.startsWith('STD-')));
+  return std.tie ? undefined : std.norm;
 }
 
 /** Which project a sheet belongs to: its name shares words with the project's name or is its code. */

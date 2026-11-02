@@ -12,6 +12,7 @@ import { audit } from '../services/audit.js';
 import { assertReportDate, createReportSchema, currentRates, loadReport, parseRange, prepareGangs, reportBodySchema, reportsInRange, reportSummary } from '../services/labourReports.js';
 import { buildLabourWorkbook } from '../services/labourExport.js';
 import { labourTemplate, normByName, projectForSheet, readLabourWorkbook, workWords, type ImportedSheet } from '../services/labourExcelImport.js';
+import { ensureStandardNorms } from '../services/standardNorms.js';
 import { extractLabourSheet, labourSheetAiConfigured, MAX_SHEET_IMAGE_BYTES, SHEET_IMAGE_TYPES, type SheetImageType } from '../services/labourSheetAi.js';
 
 /** /projects/:projectId/labour-reports */
@@ -29,6 +30,7 @@ projectLabourRouter.get('/', async (req, res) => {
   const projectId = param(req, 'projectId');
   assertCan(ctx, 'manpower.view', projectId);
   const { from, to } = parseRange(req.query, 366);
+  await ensureStandardNorms(prisma, ctx.orgId);
   const items = await prisma.dailyLabourReport.findMany({ where: { projectId, date: { gte: toDateOnly(from)!, lte: toDateOnly(to)! } }, orderBy: { date: 'desc' }, take: 400, include: { _count: { select: { gangs: true } } } });
   res.json({ items, canManage: can(ctx, 'manpower.manage', projectId), rates: await currentRates(prisma, ctx.orgId), aiConfigured: labourSheetAiConfigured() });
 });
@@ -104,8 +106,10 @@ projectLabourRouter.post('/import-excel', xlsxUpload.single('file'), async (req,
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { id: true, name: true, code: true } });
   const sheets = await readLabourWorkbook(req.file.buffer);
 
-  // Norms: by code, by the output/crew written in the file, or by the norm's name in the work. Missing ones can be added in one go.
-  let norms = await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId } });
+  // Norms: by code, by the output/crew written in the file, or by the norm's name in the work (own norms, then the
+  // standard library). Missing ones can be added in one go.
+  await ensureStandardNorms(prisma, ctx.orgId);
+  let norms = await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId, active: true } });
   const unitCode = (u: string) => u.replace(/[^a-z]/gi, '').toUpperCase();
   const specKey = (x: { unit: string; outputPerDay: unknown; masonsPerCrew: number; helpersPerCrew: number }) => `${x.unit}|${Number(x.outputPerDay)}|${x.masonsPerCrew}|${x.helpersPerCrew}`;
   const missing = new Map<string, { code: string; name: string; unit: string; outputPerDay: number; masonsPerCrew: number; helpersPerCrew: number }>();
@@ -142,7 +146,7 @@ projectLabourRouter.post('/import-excel', xlsxUpload.single('file'), async (req,
       }
       await audit(tx, ctx, { action: 'CREATE', entityType: 'labourNorm', entityId: null, projectId, summary: `${toAdd.length} labour norm(s) added from ${fileName}` });
     });
-    norms = await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId } });
+    norms = await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId, active: true } });
     collectMissing();
   }
   const byCode = new Map(norms.map((n) => [n.code.toUpperCase(), n]));

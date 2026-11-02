@@ -546,6 +546,19 @@ function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted
   const reader = usePhotoReader(projectId, 'evening', (ex, photo) => onEdit('evening', mergeEvening(report.gangs.map(fromGang), ex), photo, ex.unreadable));
   const excel = useExcelReader(projectId, report.date.slice(0, 10), (drafts, stage, notes) => onEdit(stage, drafts, undefined, notes));
   const del = useMutation({ mutationFn: (reason: string) => fetch(api.url(`/projects/${projectId}/labour-reports/${report.id}`), { method: 'DELETE', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'toprock' }, body: JSON.stringify({ reason }) }).then(async (r) => { if (!r.ok) throw new Error((await r.json()).error?.message ?? 'Could not delete'); }), onSuccess: () => { toast.success('Report deleted'); onDeleted(); }, onError: (e: Error) => toast.error(e.message) });
+  const qc = useQueryClient();
+  const unnormed = report.gangs.filter((g) => g.doneQty && !g.norm);
+  // Saving the gangs again lets the server pick the norm each work's name describes.
+  const measure = useMutation({
+    mutationFn: () => api.put<Report>(`/projects/${projectId}/labour-reports/${report.id}`, { status: report.status, remarks: report.remarks, expectedUpdatedAt: report.updatedAt, gangs: report.gangs.map((g) => ({ work: g.work, workers: g.workers, masons: Number(g.masons), helpers: Number(g.helpers), normId: g.normId, doneQty: g.doneQty, unit: g.unit, normId2: g.normId2, doneQty2: g.doneQty2, unit2: g.unit2, progress: g.progress, outcome: g.outcome })) }),
+    onSuccess: (r) => {
+      const left = r.gangs.filter((g) => g.doneQty && !g.norm).length;
+      if (left === unnormed.length) toast.error('No norm describes these works. Add one under Manpower → Labour norms, or choose it in the evening update.');
+      else toast.success(`${unnormed.length - left} work(s) measured${left ? `; ${left} still need a norm` : ''}`);
+      void qc.invalidateQueries({ queryKey: ['p'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const photos = useQuery({ queryKey: ['p', 'dlr-photos', report.id], queryFn: () => api.get<Array<{ id: string; label: string; fileId: string; createdAt: string }>>(`/projects/${projectId}/attachments`, { entityType: 'dailyLabourReport', entityId: report.id }) });
   return (
     <div className="space-y-4">
@@ -571,11 +584,16 @@ function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted
         )}
       </div>
       <SummaryTiles s={report.summary} />
-      {report.gangs.some((g) => g.doneQty && !g.norm) && (
-        <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
-          {report.gangs.filter((g) => g.doneQty && !g.norm).map((g) => g.work).join(', ')}: quantity entered but no per-day average (norm), so no profit or loss is shown for it.
-          {manage && ' Use “Edit evening update” and choose the per-day norm (add it under Manpower → Labour norms if it is not there).'}
-        </p>
+      {unnormed.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>{unnormed.map((g) => g.work).join(', ')}: quantity entered but no per-day norm, so no profit or loss is shown for it.</p>
+          {manage && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button size="sm" loading={measure.isPending} onClick={() => measure.mutate()}>Measure with standard per-day norms</Button>
+              <span className="text-xs">Matches each work to your norms, then the standard library (Manpower → Labour norms). Works that still do not match need a norm chosen in “Edit evening update”.</span>
+            </div>
+          )}
+        </div>
       )}
       <Card title="Work and labour check" bodyClassName="p-0">
         <div className="divide-y divide-line md:hidden">

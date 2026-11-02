@@ -41,7 +41,8 @@ describe('labour norms', () => {
     }
     expect((await w.c.auditor.post('/org/r/labourNorms', { code: 'X', name: 'X', outputPerDay: '1', unit: 'Nos', masonsPerCrew: 1, helpersPerCrew: 0 })).status).toBe(403);
     const opts = await w.c.se.ok.get(`${w.P}/lookups/labourNorms`);
-    expect(opts.map((o: any) => o.extra?.code ?? o.code).length).toBe(3);
+    expect(opts.map((o: any) => o.extra?.code ?? o.code).filter((c: string) => !c.startsWith('STD-')).length).toBe(3);
+    expect(opts.length).toBeGreaterThan(40); // plus the standard library
   });
 });
 
@@ -372,7 +373,7 @@ describe('one Excel file for several sites (Ponram, Kadara, Factory)', () => {
         ['Floor screeding – 1st floor hall', 'Ravi, Mani', 1, 1, 500, 'Sq.ft'],
         ['Brick installation', 'Anuj, Munna, Arun', 1, 2, 600, 'Nos'],
       ],
-      Kadara: [['Terrace screeding work', 'Selva, Kannan', 1, 1, 300, 'Sq.ft']],
+      Kadara: [['Terrace screeding work', 'Selva, Kannan', 1, 1, 300, 'Sq.ft'], ['Mural sketching', 'Ravi', 1, 0, 20, 'Sq.ft']],
       Factory: [['Site cleaning', 'Nihal', 0, 1, null, null]],
     };
     for (const [name, rows] of Object.entries(sheets)) {
@@ -398,19 +399,18 @@ describe('one Excel file for several sites (Ponram, Kadara, Factory)', () => {
     expect(r.body.preferred).toBe('Ponram');
   });
 
-  it('works with a quantity but no per-day average are listed; typing the average measures them', async () => {
+  it('every common work is measured from the standard library; works it cannot name are listed for an average', async () => {
     const r = await send(se);
-    // Brick installation is matched by name to the BRICK-NOS norm; screeding has no norm yet.
-    expect(r.body.sheets[0].gangs[1].normId).toBe(norms['BRICK-NOS'].id);
-    expect(r.body.unmeasured.map((u: any) => [u.unit, u.sheets])).toEqual([
-      ['Sq.ft', ['Ponram']],
-      ['Sq.ft', ['Kadara']],
-    ]);
-    const avg = JSON.stringify([{ name: 'Screeding', unit: 'Sq.ft', outputPerDay: 400, masonsPerCrew: 1, helpersPerCrew: 1 }]);
-    const ok = await send(adm, { newNorms: avg });
+    const [screed, brick] = r.body.sheets[0].gangs;
+    // Own norm (BRICK-NOS) wins over the standard brickwork norm; screeding comes from the standard library.
+    expect(brick.normId).toBe(norms['BRICK-NOS'].id);
+    expect(screed.norm).toMatchObject({ code: 'STD-SCREED', unit: 'Sq.ft', outputPerDay: '250', masonsPerCrew: 1, helpersPerCrew: 2 });
+    expect(r.body.sheets.find((x: any) => x.sheet === 'Kadara').gangs[0].norm.code).toBe('STD-ROOF-SCREED'); // terrace screed
+    expect(r.body.unmeasured.map((u: any) => u.work)).toEqual(['Mural sketching']);
+    // A typed average becomes the organisation's own norm and is used from then on.
+    const ok = await send(adm, { newNorms: JSON.stringify([{ name: 'Mural sketching', unit: 'Sq.ft', outputPerDay: 40, masonsPerCrew: 1, helpersPerCrew: 0 }]) });
     expect(ok.status).toBe(200);
     expect(ok.body.unmeasured).toEqual([]);
-    expect(ok.body.sheets[0].gangs[0].norm).toMatchObject({ name: 'Screeding', outputPerDay: '400', unit: 'Sq.ft' });
     expect((await send(adm, { newNorms: JSON.stringify([{ name: 'X', unit: 'Sq.ft', outputPerDay: 0, masonsPerCrew: 1, helpersPerCrew: 0 }]) })).status).toBe(422);
   });
 
@@ -423,11 +423,23 @@ describe('one Excel file for several sites (Ponram, Kadara, Factory)', () => {
     expect(by.Factory).toMatchObject({ project: null, created: [] });
     const s = await w.c.admin.ok.get(`/labour-reports/summary?from=${D}&to=${D}`);
     const row = (pid: string) => s.rows.find((x: any) => x.projectId === pid);
-    // Kadara: 300 Sq.ft against 400 a day for 1 mason → 75 %, a loss of a quarter of the day's labour.
-    expect(row(kadara.id)).toMatchObject({ outputPct: '0.7500', result: 'LOSS' });
-    expect(Number(row(kadara.id).profitLoss)).toBeCloseTo(-0.25 * Number(row(kadara.id).labourCost), 2);
+    // Kadara: 300 Sq.ft terrace screed against 150 a day for 1 mason → 200 %; the 20 Sq.ft mural (40 a day) → 50 %.
+    expect(row(kadara.id).result).toBe('PROFIT');
+    expect(Number(row(kadara.id).profitLoss)).toBeCloseTo(2400 * 1 + 1400 * -0.5, 2); // ₹1,400 mason, ₹1,000 helper
     expect(row(ponram.id).result).not.toBe('NOT_MEASURED');
     expect((await send(se, { saveAllSheets: 'true' })).body.created).toEqual([]); // nothing twice
+  });
+
+  it('typed reports pick the norm from the work name too', async () => {
+    const r = await w.c.se.ok.post(`/projects/${kadara.id}/labour-reports`, { date: day(-13), gangs: [
+      { work: 'Wall putty 2nd coat', workers: ['A'], masons: 1, helpers: 0, doneQty: '300', progress: 'DONE' },
+      { work: 'Vitrified tile laying – lobby', workers: ['B', 'C'], masons: 1, helpers: 1, doneQty: '80', unit: 'Sq.ft', progress: 'DONE' },
+    ] });
+    expect(r.gangs.map((g: any) => g.norm?.code)).toEqual(['STD-PUTTY', 'STD-TILE-FLOOR']);
+    expect(r.gangs[0]).toMatchObject({ unit: 'Sq.ft', result: 'PROFIT' }); // 300 against 250 a day
+    expect(Number(r.gangs[0].outputPct)).toBe(1.2);
+    expect(r.gangs[1].result).toBe('LOSS'); // 80 against 100 a day
+    expect(Number(r.gangs[1].outputPct)).toBe(0.8);
   });
 });
 
@@ -451,5 +463,17 @@ describe('matching helpers', () => {
     expect(projectForSheet('FAC', projects)?.code).toBe('FAC');
     expect(projectForSheet('Factory', projects)?.code).toBe('FAC');
     expect(projectForSheet('Sheet1', projects)).toBeUndefined();
+    // Other words and the standard library: own norms first, the most specific wins, ties match nothing.
+    const { STANDARD_LABOUR_NORMS } = await import('../src/services/standardNorms.js');
+    const code = (work: string, unit: string | null = null) => normByName(work, unit, STANDARD_LABOUR_NORMS)?.code;
+    expect(code('Ceiling plastering 1st floor')).toBe('STD-PLAS-CEIL');
+    expect(code('External plastering north side')).toBe('STD-PLAS-EXT');
+    expect(code('Toilet wall tiling')).toBe('STD-TILE-WALL');
+    expect(code('Glass partition fixing')).toBe('STD-GLAZING');
+    expect(code('Gypsum false ceiling framing')).toBe('STD-GYP-CEIL');
+    expect(code('Core cutting for AC drain')).toBe('STD-CORE-CUT');
+    expect(code('Slab shuttering', 'Sq.ft')).toBe('STD-SHUTTER');
+    expect(code('Light box framing', 'Nos')).toBeUndefined();
+    expect(normByName('Floor screeding', 'Sq.ft', [...STANDARD_LABOUR_NORMS, { code: 'MY-SCREED', name: 'Screed', unit: 'Sq.ft' }])?.code).toBe('MY-SCREED');
   });
 });
