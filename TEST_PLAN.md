@@ -42,7 +42,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Stock | Receipt increases balance. An issue beyond the balance is refused and rolled back. Issues are valued at weighted average cost. (`procurement.test.ts`) |
 | Measurement and billing | The recorder cannot verify their own measurement. Variance is recorded. Certification goes through the workflow. Progress alone is never billable. RA bill amounts are computed on the server (work value, retention, tax, net). The same quantity cannot be billed twice. (`billing.test.ts`) |
 | Period close | Cannot close with pending checklist items. A waiver needs a note. Reviewer sign-off closes the period. A posting into the closed period is refused and rolled back. Only `period.reopen` holders can reopen, and only with a reason (≥ 10 characters), which is audited. (`periods.test.ts`) |
-| Imports | Preview validates every row (number format, duplicates in file, unknown references) without writing. Commit is refused while errors exist unless the user skips them. A job cannot be committed twice. Error CSV neutralises formulas. Import permission required. (`imports.test.ts`) |
+| Imports | Preview validates every row (number format, duplicates in file, unknown references) without writing. Commit is refused while errors exist unless the user skips them. A job cannot be committed twice. Error CSV neutralises formulas. Import permission required. Estimator-style BOQ workbooks (Summary sheet first, sections, item headings, a/b lines, section totals, note column) are flattened with codes like 2.01.a, headings kept as specification, and the total checked against the file's section totals; the real LOF Mega Mall BOQ imported 214 items totalling ₹1,55,94,970.30, matching the file (checked by hand). (`imports.test.ts`) |
 | Reports and exports | CSV, PDF and XLSX exports download from the UI with correctly named, non-empty files (`journey.spec.ts`) |
 | Responsive and mobile | Bottom navigation and capture entry are present, with no horizontal overflow on the dashboard, evidence, MR list or manpower pages at Pixel 7 size (`mobile.spec.ts`) |
 | Forms | Successful save navigates without a false "unsaved changes" prompt. Required-reason dialogs block empty reasons. (`journey.spec.ts`, `components.test.tsx`) |
@@ -63,7 +63,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Suite | Result |
 |---|---|
 | `@toprock/shared` unit | **42 / 42 passed** (4 files) |
-| `@toprock/api` integration | **107 / 107 passed** (13 files) |
+| `@toprock/api` integration | **108 / 108 passed** (13 files) |
 | `@toprock/web` components | **11 / 11 passed** (3 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |

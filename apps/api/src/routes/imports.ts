@@ -14,6 +14,7 @@ import { audit } from '../services/audit.js';
 import { postStock } from '../services/stock.js';
 import { detectAllowedType } from '../services/storage.js';
 import { toCsv } from '../services/exporter.js';
+import { readStructuredBoq } from '../services/boqExcelReader.js';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.maxUploadBytes, files: 1 } });
 export const importsRouter = Router();
@@ -35,7 +36,7 @@ export const IMPORT_SPECS: Record<Kind, { title: string; projectScoped: boolean;
     title: 'BOQ items',
     projectScoped: true,
     permission: 'boq.manage',
-    fields: [txt('itemCode', 'Item code', true, ['item', 'item no', 'code', 'sl no']), txt('description', 'Description', true, ['desc', 'item description']), txt('unit', 'Unit', true, ['uom']), num('contractQty', 'Contract qty', true, ['qty', 'quantity']), num('unitRate', 'Unit rate', true, ['rate']), num('estimatedQty', 'Estimated qty'), txt('section', 'Section', false, ['work package', 'package']), txt('boqRef', 'BOQ ref'), txt('costCode', 'Cost code'), txt('drawingRef', 'Drawing ref'), txt('remarks', 'Remarks')],
+    fields: [txt('itemCode', 'Item code', true, ['item', 'item no', 'code', 'sl no']), txt('description', 'Description', true, ['desc', 'item description']), txt('unit', 'Unit', true, ['uom']), num('contractQty', 'Contract qty', true, ['qty', 'quantity']), num('unitRate', 'Unit rate', true, ['rate']), num('estimatedQty', 'Estimated qty'), txt('section', 'Section', false, ['work package', 'package']), txt('boqRef', 'BOQ ref'), txt('costCode', 'Cost code'), txt('drawingRef', 'Drawing ref'), txt('specification', 'Specification', false, ['spec']), txt('remarks', 'Remarks')],
   },
   COST_CODES: {
     title: 'Cost codes & budget',
@@ -207,7 +208,21 @@ importsRouter.post('/preview', upload.single('file'), async (req, res) => {
   const projectId = IMPORT_SPECS[body.kind].projectScoped ? (body.projectId ?? null) : null;
   await checkAccess(ctx, body.kind, projectId);
   if (!req.file) throw validationError('Choose a file');
-  const table = await readTable(req.file);
+  // Estimator-style BOQs (sections, item headings, a/b/c lines, section totals) are flattened first.
+  const notes: string[] = [];
+  let totals: { fileTotal: number | null; importedTotal: number } | null = null;
+  let table: string[][] | null = null;
+  if (body.kind === 'BOQ' && !body.mapping && /\.xlsx$/i.test(req.file.originalname)) {
+    const boq = await readStructuredBoq(req.file.buffer);
+    if (boq) {
+      table = [['Item code', 'Description', 'Unit', 'Contract qty', 'Unit rate', 'Section', 'Specification', 'Remarks'], ...boq.items.map((i) => [i.itemCode, i.description, i.unit, String(i.qty), String(i.rate), i.section ?? '', i.specification ?? '', i.remarks ?? ''])];
+      totals = { fileTotal: boq.fileTotal, importedTotal: boq.importedTotal };
+      notes.push(`Read sheet “${boq.sheet}”: ${boq.sections} sections, ${boq.items.length} priced items. Item headings are kept as the specification; lines a, b, c… become items such as 1.01.a.`);
+      if (boq.fileTotal !== null && Math.abs(boq.fileTotal - boq.importedTotal) <= 1) notes.push(`Total ${boq.importedTotal.toLocaleString('en-IN', { minimumFractionDigits: 2 })} matches the section totals in the file.`);
+      notes.push(...boq.warnings);
+    }
+  }
+  table ??= await readTable(req.file);
   if (table.length < 2) throw validationError('The file needs a header row and at least one data row');
   const headers = table[0];
   const spec = IMPORT_SPECS[body.kind];
@@ -215,7 +230,7 @@ importsRouter.post('/preview', upload.single('file'), async (req, res) => {
   const missing = spec.fields.filter((f) => f.required && mapping[f.key] === undefined);
   const records = table.slice(1).map((r) => Object.fromEntries(spec.fields.map((f) => [f.key, mapping[f.key] !== undefined ? (r[mapping[f.key]] ?? '').trim() : ''])));
   const rows = missing.length ? records.map((values, i) => ({ row: i + 2, values, errors: [`Map required columns: ${missing.map((m) => m.label).join(', ')}`], action: 'SKIP' as const })) : await validateRows(ctx, body.kind, projectId, records);
-  const summary = { total: rows.length, valid: rows.filter((r) => r.action === 'CREATE').length, invalid: rows.filter((r) => r.action === 'SKIP').length, headers, missingRequired: missing.map((m) => m.key) };
+  const summary = { total: rows.length, valid: rows.filter((r) => r.action === 'CREATE').length, invalid: rows.filter((r) => r.action === 'SKIP').length, headers, missingRequired: missing.map((m) => m.key), notes, ...(totals ?? {}) };
   const job = await prisma.importJob.create({ data: { orgId: ctx.orgId, projectId, kind: body.kind, fileName: req.file.originalname.slice(0, 200), mapping, rows: rows as never, summary, createdById: ctx.user.id } });
   res.status(201).json({ id: job.id, summary, mapping, fields: spec.fields, rows: rows.slice(0, 500) });
 });
@@ -249,7 +264,7 @@ importsRouter.post('/:id/commit', async (req, res) => {
   await transaction(async (tx) => {
     if (kind === 'BOQ') {
       const codes = new Map((await tx.costCode.findMany({ where: { projectId: projectId! } })).map((c) => [c.code, c.id]));
-      await tx.boqItem.createMany({ data: valid.map(({ values: v }) => ({ projectId: projectId!, itemCode: v.itemCode, description: v.description, unit: v.unit, contractQty: v.contractQty, estimatedQty: v.estimatedQty || v.contractQty, unitRate: v.unitRate, section: v.section || null, boqRef: v.boqRef || null, costCodeId: v.costCode ? codes.get(v.costCode) ?? null : null, drawingRef: v.drawingRef || null, remarks: v.remarks || null })) });
+      await tx.boqItem.createMany({ data: valid.map(({ values: v }) => ({ projectId: projectId!, itemCode: v.itemCode, description: v.description, unit: v.unit, contractQty: v.contractQty, estimatedQty: v.estimatedQty || v.contractQty, unitRate: v.unitRate, section: v.section || null, boqRef: v.boqRef || null, costCodeId: v.costCode ? codes.get(v.costCode) ?? null : null, drawingRef: v.drawingRef || null, specification: v.specification || null, remarks: v.remarks || null })) });
     } else if (kind === 'COST_CODES') {
       for (const { values: v } of valid) {
         let wbsId: string | null = null;

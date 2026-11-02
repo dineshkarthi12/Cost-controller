@@ -22,7 +22,7 @@ interface PreviewRow {
 }
 interface Preview {
   id: string;
-  summary: { total: number; valid: number; invalid: number; headers: string[]; missingRequired: string[] };
+  summary: { total: number; valid: number; invalid: number; headers: string[]; missingRequired: string[]; notes?: string[]; fileTotal?: number | null; importedTotal?: number };
   mapping: Record<string, number>;
   fields: FieldSpec[];
   rows: PreviewRow[];
@@ -120,6 +120,11 @@ export function ImportDialog({ kind, open, onOpenChange }: { kind: ImportKind; o
             <Badge tone="success">{preview.summary.valid} valid</Badge>
             {preview.summary.invalid > 0 && <Badge tone="danger">{preview.summary.invalid} with errors</Badge>}
           </div>
+          {!!preview.summary.notes?.length && (
+            <ul className="space-y-1 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+              {preview.summary.notes.map((n, i) => <li key={i}>{n}</li>)}
+            </ul>
+          )}
           <details open={preview.summary.missingRequired.length > 0} className="rounded-lg border border-line p-3">
             <summary className="cursor-pointer text-sm font-medium">Column mapping</summary>
             <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
