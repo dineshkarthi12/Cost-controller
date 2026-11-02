@@ -6,6 +6,7 @@ import { notify } from './services/notifications.js';
 import { addDays, today } from './lib/dates.js';
 import { usersWithRole } from './services/access.js';
 import { projectCostPositions } from './services/budget.js';
+import { dailyPackJob } from './services/dailyPack.js';
 
 /** Contract / guarantee expiry, delivery delays, payment due and overrun alerts (deduplicated daily). */
 export async function businessAlerts() {
@@ -45,6 +46,7 @@ const JOBS: Array<[string, () => Promise<unknown>, number]> = [
   ['task alerts', taskAlerts, 60 * 60_000],
   ['recurring tasks', generateRecurringTasks, 60 * 60_000],
   ['business alerts', businessAlerts, 6 * 60 * 60_000],
+  ['end-of-day pack', dailyPackJob, 5 * 60_000],
 ];
 
 export function startJobs() {

@@ -3,17 +3,15 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from 'react-router';
 import { boqSheetRows, type BoqSheetItem } from '@toprock/shared';
 import { api } from '../../lib/api';
-import { useAuth, useProjectId } from '../../lib/auth';
+import { useProjectId } from '../../lib/auth';
 import { formatMoney } from '../../lib/format';
 import { Card, EmptyState, ErrorState, Input, LoadingBlock, cx } from '../../components/ui';
-import { WhatsAppShare } from '../share/WhatsAppShare';
 
 const qtyText = (v: string) => Number(v).toLocaleString('en-IN', { maximumFractionDigits: 3 });
 
 /** The BOQ as the Excel shows it: sections, item headings, a/b/c lines, section totals and the grand total. */
 export function BoqSheet() {
   const projectId = useProjectId();
-  const { project } = useAuth();
   const navigate = useNavigate();
   const [q, setQ] = useState('');
   const list = useQuery({ queryKey: ['p', 'boq-sheet', projectId], queryFn: () => api.get<{ items: BoqSheetItem[]; total: number }>(`/projects/${projectId}/r/boqItems`, { pageSize: 1000 }), enabled: !!projectId });
@@ -26,21 +24,11 @@ export function BoqSheet() {
   if (list.isLoading) return <LoadingBlock rows={8} />;
   if (list.error) return <ErrorState error={list.error} />;
   if (!list.data?.items.length) return <Card><EmptyState title="No BOQ items yet" description="Import the BOQ Excel with the Import button, or add items one by one." /></Card>;
-  const grand = rows[rows.length - 1];
-  // Section totals, as written in the Summary sheet of the BOQ.
-  const lines: string[] = [];
-  let sec = '';
-  for (const r of rows) {
-    if (r.kind === 'SECTION') sec = `${r.no ? `${r.no}. ` : ''}${r.title}`;
-    if (r.kind === 'TOTAL') lines.push(`${sec || r.title}: ${formatMoney(r.amount)}`);
-  }
-  const shareText = [`*BOQ – ${project?.name ?? ''}*`, ...lines, grand.kind === 'GRAND_TOTAL' ? `*Total: ${formatMoney(grand.amount)}* (${grand.items} items)` : ''].filter(Boolean).join('\n');
   return (
     <Card bodyClassName="p-0">
       <div className="flex flex-wrap items-center gap-2 border-b border-line p-3">
         <Input className="max-w-sm" value={q} placeholder="Search code, description, section…" aria-label="Search the BOQ" onChange={(e) => setQ(e.target.value)} />
         <span className="text-xs text-muted">{items.length} of {list.data.total} items · in the order of the BOQ file</span>
-        <div className="ml-auto"><WhatsAppShare text={shareText} what="BOQ summary" /></div>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[760px] text-sm">

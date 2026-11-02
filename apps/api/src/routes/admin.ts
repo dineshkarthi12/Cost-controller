@@ -243,7 +243,10 @@ adminRouter.put('/settings', async (req, res) => {
   const body = parseBody(z.object({ name: z.string().min(2).max(200).optional(), baseCurrency: z.enum(['INR', 'USD', 'EUR', 'GBP', 'AED']).optional(), timezone: z.string().max(60).optional(), settings: orgSettingsSchema.partial().optional() }), req.body);
   const out = await transaction(async (tx) => {
     const before = await getOrgSettings(tx, ctx.orgId);
-    const next = orgSettingsSchema.parse({ ...before, ...(body.settings ?? {}) });
+    // Only the settings sent are changed (zod fills defaults for missing keys, which must not overwrite saved values).
+    const sent = (req.body?.settings ?? {}) as Record<string, unknown>;
+    const changed = Object.fromEntries(Object.entries(body.settings ?? {}).filter(([k]) => k in sent));
+    const next = orgSettingsSchema.parse({ ...before, ...changed });
     const org = await tx.organisation.update({ where: { id: ctx.orgId }, data: { name: body.name, baseCurrency: body.baseCurrency, timezone: body.timezone, settings: next as never } });
     const d = diff(before as never, next as never);
     await audit(tx, ctx, { action: 'SETTINGS_UPDATED', entityType: 'organisation', entityId: ctx.orgId, before: d.before, after: d.after });

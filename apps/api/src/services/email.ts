@@ -18,6 +18,7 @@ export interface EmailMessage {
   text: string;
   /** Optional call-to-action link and label. */
   action?: { url: string; label: string };
+  attachments?: Array<{ filename: string; content: Buffer; contentType?: string }>;
 }
 
 function settings() {
@@ -76,7 +77,7 @@ export async function sendEmailNow(m: EmailMessage): Promise<{ sent: boolean; er
   }
   try {
     const action = m.action ? `\n\n${m.action.label}: ${m.action.url}` : '';
-    await getTransport().sendMail({ from: settings()!.from, to: m.to, subject: m.subject, text: `${m.text}${action}`, html: html(m) });
+    await getTransport().sendMail({ from: settings()!.from, to: m.to, subject: m.subject, text: `${m.text}${action}`, html: html(m), attachments: m.attachments });
     return { sent: true };
   } catch (err) {
     const error = (err as Error).message;

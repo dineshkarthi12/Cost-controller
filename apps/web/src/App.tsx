@@ -21,6 +21,7 @@ import { AttendancePage, EquipmentUtilisation, ProgressPage, SchedulePage, Verif
 import { DailyLabourPage, LabourSummaryPage } from './features/site/LabourReportPages';
 import { ImportButton } from './features/admin/ImportDialog';
 import { BoqSheet } from './features/commercial/BoqSheet';
+import { DailyPackPage } from './features/share/DailyPackPage';
 import { BomPage } from './features/commercial/BomPage';
 import { MyWorkReportPage, TeamWorkReportsPage, WorkReportSummaryPage } from './features/tasks/WorkReportPages';
 import { AuditPage, IntegrationsPage, SettingsPage, UsersPage } from './features/admin/AdminPages';
@@ -91,6 +92,7 @@ const MODULE_TABS: Record<string, TabDef[]> = {
   documents: [T('Document register', '/documents', 'documents')],
   transmittals: [T('Transmittals', '/transmittals', 'transmittals'), T('RFIs & technical queries', '/transmittals/rfis', 'rfis')],
   tasks: [T('Tasks', '/tasks', 'tasks', { element: <TasksPage /> })],
+  dailypack: [T('Daily send', '/daily-pack', undefined, { element: <DailyPackPage /> })],
   workreports: [
     T('My report', '/work-reports', undefined, { element: <MyWorkReportPage />, anyOf: ['workreport.submit'] }),
     T('Team reports', '/work-reports/team', undefined, { element: <TeamWorkReportsPage />, anyOf: ['workreport.review'] }),

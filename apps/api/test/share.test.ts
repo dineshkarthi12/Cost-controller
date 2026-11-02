@@ -11,7 +11,7 @@ describe('WhatsApp contacts', () => {
   it('are kept in the organisation settings and given to every user for one-click sharing', async () => {
     await w.c.admin.ok.put('/admin/settings', { settings: { whatsappContacts: [{ name: 'Gowtham', role: 'Executive Director', phone: '+91 89407 42959' }] } });
     const me = await w.c.se.ok.get('/auth/me');
-    expect(me.whatsappContacts).toEqual([{ name: 'Gowtham', role: 'Executive Director', phone: '+91 89407 42959' }]);
+    expect(me.whatsappContacts).toMatchObject([{ name: 'Gowtham', role: 'Executive Director', phone: '+91 89407 42959', dailyPack: true }]);
     expect((await w.c.admin.put('/admin/settings', { settings: { whatsappContacts: [{ name: 'X', role: '', phone: 'call me' }] } })).status).toBe(422);
     expect((await w.c.se.put('/admin/settings', { settings: { whatsappContacts: [] } })).status).toBe(403);
   });

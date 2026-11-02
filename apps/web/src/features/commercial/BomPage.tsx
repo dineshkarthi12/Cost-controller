@@ -8,7 +8,6 @@ import { formatMoney, formatQty } from '../../lib/format';
 import { Badge, Button, Card, Checkbox, Dialog, EmptyState, Input, KpiCard, LoadingBlock, PermissionDenied, Select, TabPanel, Tabs } from '../../components/ui';
 import { RefSelect } from '../../components/forms/RefSelect';
 import { PageHeader } from '../../components/layout/AppShell';
-import { WhatsAppShare } from '../share/WhatsAppShare';
 
 interface BomLine {
   id: string;
@@ -63,7 +62,7 @@ const qtyText = (v: string | number) => formatQty(String(v), 2);
 
 export function BomPage() {
   const projectId = useProjectId();
-  const { can, project } = useAuth();
+  const { can } = useAuth();
   const [tab, setTab] = useState('items');
   const [q, setQ] = useState('');
   const [kind, setKind] = useState('');
@@ -82,20 +81,6 @@ export function BomPage() {
         actions={
           <div className="flex flex-wrap gap-2">
             {d?.canManage && <ImportBom projectId={projectId} existing={d.totals.items} />}
-            {!!d?.totals.items && (
-              <WhatsAppShare
-                what="BOM"
-                text={[
-                  `*BOM – ${project?.name ?? ''}*`,
-                  `${d.totals.items} BOQ items · ${d.totals.lines} lines${Number(d.totals.amount) ? ` · ${formatMoney(d.totals.amount)}` : ''}`,
-                  ...Object.entries(d.totals.byKind).map(([k, v]) => `${KIND_LABEL[k] ?? k}: ${v.lines} lines${Number(v.amount) ? ` · ${formatMoney(v.amount)}` : ''}`),
-                  '',
-                  '*Main materials*',
-                  ...d.summary.filter((s) => s.kind === 'MATERIAL').slice(0, 25).map((s) => `• ${s.description}: ${qtyText(s.totalQty)} ${s.unit}`),
-                ].join('\n')}
-                file={() => fetch(api.url(`/projects/${projectId}/bom/export`), { credentials: 'include' }).then(async (r) => { if (!r.ok) throw new Error('Could not get the BOM Excel'); return new File([await r.blob()], `BOM-${project?.code ?? 'project'}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); })}
-              />
-            )}
             {!!d?.totals.items && (
               <a className="inline-flex h-9 items-center gap-2 rounded-lg border border-line bg-white px-3.5 text-sm font-medium text-ink hover:bg-slate-50" href={api.url(`/projects/${projectId}/bom/export`)} download>
                 <Download className="h-4 w-4" /> Excel

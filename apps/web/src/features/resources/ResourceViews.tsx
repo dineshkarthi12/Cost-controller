@@ -13,8 +13,6 @@ import { RefSelect } from '../../components/forms/RefSelect';
 import { ResourceForm } from '../../components/forms/ResourceForm';
 import { ApprovalTimeline, AttachmentsPanel, AuditTimeline, CommentsPanel, LinkedEvidence } from '../../components/record/Panels';
 import { Page, PageHeader } from '../../components/layout/AppShell';
-import { WhatsAppShare } from '../share/WhatsAppShare';
-import { recordShareText } from '../share/shareText';
 import { EXTENSIONS } from './extensions';
 
 export type Rec = Record<string, unknown> & { id: string; _labels?: Record<string, string | null>; _permissions?: { canEdit: boolean; canSubmit: boolean; canDelete: boolean; canCancel: boolean } };
@@ -284,11 +282,6 @@ export function ResourceDetail({ resourceKey, basePath, breadcrumbs }: { resourc
         actions={
           <>
             {ext?.actions?.(ctx)}
-            <WhatsAppShare
-              what={`${def.label} ${title}`}
-              text={recordShareText(def, rec as Record<string, unknown> & { _labels?: Record<string, string> }, def.projectScoped ? project?.name : undefined, project?.currency)}
-              file={def.model === 'purchaseOrder' ? () => fetch(api.url(`/projects/${projectId}/procurement/po/${id}/pdf`), { credentials: 'include' }).then(async (r) => { if (!r.ok) throw new Error('Could not get the PO PDF'); return new File([await r.blob()], `${title}.pdf`, { type: 'application/pdf' }); }) : undefined}
-            />
             {perms.canEdit && (
               <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => navigate(`${basePath}/${id}/edit`)}>
                 Edit
