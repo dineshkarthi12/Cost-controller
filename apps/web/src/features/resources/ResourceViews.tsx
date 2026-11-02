@@ -71,6 +71,7 @@ function useListState(def: ResourceDef) {
     filters: Object.fromEntries(def.fields.filter((f) => f.filter || f.name === 'status').map((f) => [f.name, params.get(f.name) ?? ''])),
     from: params.get('from') ?? '',
     to: params.get('to') ?? '',
+    pageSize: Number(params.get('size')) || def.pageSize || 25,
   };
   const update = (patch: Record<string, string | number | undefined>) => {
     const next = new URLSearchParams(params);
@@ -91,7 +92,7 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
   const navigate = useNavigate();
   const { state, update } = useListState(def);
   const [search, setSearch] = useState(state.q);
-  const params = { page: state.page, pageSize: 25, sort: state.sort, dir: state.dir, q: state.q, from: state.from, to: state.to, ...Object.fromEntries(Object.entries(state.filters).filter(([, v]) => v)), ...fixedFilters };
+  const params = { page: state.page, pageSize: state.pageSize, sort: state.sort, dir: state.dir, q: state.q, from: state.from, to: state.to, ...Object.fromEntries(Object.entries(state.filters).filter(([, v]) => v)), ...fixedFilters };
   const q = useQuery({ queryKey: ['p', 'list', resourceKey, projectId, params], queryFn: () => api.get<Paged<Rec>>(resourcePath(def, projectId), params), enabled: !def.projectScoped || !!projectId, placeholderData: (prev) => prev });
   const listFields = def.fields.filter((f) => f.list);
   const columns: Column<Rec>[] = listFields.map((f, i) => ({
@@ -152,6 +153,13 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
               <Select key={f.name} className="w-44" aria-label={f.label} options={(f.name === 'status' ? (statusOptions ?? def.statusOptions ?? def.manualStatuses ?? (def.workflow ? ['DRAFT', 'SUBMITTED', 'RETURNED', 'APPROVED', 'REJECTED', 'CANCELLED'] : f.options ?? [])) : (f.options ?? [])) as string[]} placeholder={`All ${f.label.toLowerCase()}`} value={state.filters[f.name]} onChange={(e) => update({ [f.name]: e.target.value })} />
             ),
           )}
+          <Select
+            className="w-32"
+            aria-label="Rows per page"
+            options={[...new Set([25, 50, 100, 500, def.pageSize ?? 25])].sort((a, b) => a - b).map((n) => ({ value: String(n), label: `${n} per page` })).concat([{ value: '1000', label: 'Show all' }])}
+            value={String(state.pageSize)}
+            onChange={(e) => update({ size: e.target.value === String(def.pageSize ?? 25) ? undefined : e.target.value })}
+          />
           {dateField && (
             <div className="flex items-center gap-1">
               <Input type="date" className="w-36" aria-label="From date" value={state.from} onChange={(e) => update({ from: e.target.value })} />

@@ -15,6 +15,8 @@ import { postStock } from '../services/stock.js';
 import { detectAllowedType } from '../services/storage.js';
 import { toCsv } from '../services/exporter.js';
 import { readStructuredBoq } from '../services/boqExcelReader.js';
+import { readLinesFromExcel } from '../services/linesExcelReader.js';
+import { getResource } from '@toprock/shared';
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.maxUploadBytes, files: 1 } });
 export const importsRouter = Router();
@@ -191,6 +193,25 @@ async function checkAccess(ctx: AccessContext, kind: Kind, projectId: string | n
   assertCan(ctx, spec.permission, projectId);
 }
 
+/**
+ * Reads the lines of a form (MR, PR, PO, GRN…) from an Excel or CSV file. Nothing is saved: every row
+ * comes back in the file's order for the user to check in the form.
+ */
+importsRouter.post('/lines', upload.single('file'), async (req, res) => {
+  const ctx = ctxOf(req);
+  const body = parseBody(z.object({ resource: z.string().max(60), field: z.string().max(60).default('lines'), projectId: z.string().max(60).optional() }), req.body ?? {});
+  const def = getResource(body.resource);
+  const f = def?.fields.find((x) => x.name === body.field && x.type === 'lines');
+  if (!def || !f) throw notFound('Form');
+  const projectId = def.projectScoped ? (body.projectId ?? null) : null;
+  if (def.projectScoped) {
+    if (!projectId || !(await accessibleProjectIds(prisma, ctx)).includes(projectId)) throw notFound('Project');
+  }
+  assertCan(ctx, `${def.area}.manage`, projectId);
+  if (!req.file) throw validationError('Choose an Excel file');
+  res.json(await readLinesFromExcel(prisma, { buf: req.file.buffer, fileName: req.file.originalname, fields: f.lines ?? [], orgId: ctx.orgId, projectId }));
+});
+
 importsRouter.get('/specs', (_req, res) => {
   res.json(Object.entries(IMPORT_SPECS).map(([kind, s]) => ({ kind, ...s })));
 });
@@ -232,7 +253,7 @@ importsRouter.post('/preview', upload.single('file'), async (req, res) => {
   const rows = missing.length ? records.map((values, i) => ({ row: i + 2, values, errors: [`Map required columns: ${missing.map((m) => m.label).join(', ')}`], action: 'SKIP' as const })) : await validateRows(ctx, body.kind, projectId, records);
   const summary = { total: rows.length, valid: rows.filter((r) => r.action === 'CREATE').length, invalid: rows.filter((r) => r.action === 'SKIP').length, headers, missingRequired: missing.map((m) => m.key), notes, ...(totals ?? {}) };
   const job = await prisma.importJob.create({ data: { orgId: ctx.orgId, projectId, kind: body.kind, fileName: req.file.originalname.slice(0, 200), mapping, rows: rows as never, summary, createdById: ctx.user.id } });
-  res.status(201).json({ id: job.id, summary, mapping, fields: spec.fields, rows: rows.slice(0, 500) });
+  res.status(201).json({ id: job.id, summary, mapping, fields: spec.fields, rows: rows.slice(0, 5000) });
 });
 
 importsRouter.get('/:id/errors.csv', async (req, res) => {

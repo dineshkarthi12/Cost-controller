@@ -102,3 +102,4 @@ These have **not** been verified by an automated test:
 3. MFA enrolment, then a login challenge.
 4. Axe accessibility scan on the top 20 pages.
 5. A k6 load test on dashboard, budget and ledger endpoints with a realistic data volume.
+| Excel order and completeness | A 12-section BOQ (72 items) imports every item, lists them on one page in the file's order (10.x after 9.x) and in the BOQ picker; the real Don Bosco LOF BOQ (143 rows: 12 sections, 40 headings, 74 priced lines, 12 totals) imported all 74 priced lines in order with the total ₹53,22,578 matching the file (checked by hand, file not in the repo). Form lines (MR, PR, PO, GRN, issues, stock counts, bills, variations…) can be filled from Excel: every row returned in order with its row number, materials / cost codes found by code or name, unknown ones kept and flagged, total and blank rows listed as left out; lines read back in the order entered (`imports.test.ts`) |

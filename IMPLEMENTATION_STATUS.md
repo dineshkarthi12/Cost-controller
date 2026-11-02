@@ -77,7 +77,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | Data separation | Working · tested | Organisation and project scoping, with every referenced id validated |
 | Cost ledger | Working · tested | Commitment / accrual / actual, append-only, period-locked |
 | Numbering | Working · tested | Database sequences, configurable formats and reset policies |
-| Imports | Working · tested | BOQ, cost codes, materials, suppliers, opening stock: preview, mapping, error report, commit |
+| Imports | Working · tested | BOQ, cost codes, materials, suppliers, opening stock: preview, mapping, error report, commit. Every row is previewed (up to 5,000) and BOQ items are listed in the file's order, all on one page (lists offer 25 / 50 / 100 / 500 per page or show all). **Form lines from Excel** (MR, PR, PO, GRN, material issues, stock counts, invoices, variations… any form with lines): every row in the file's order with its row number, materials / cost codes / suppliers found by code or name, unknown ones kept and flagged for the user, total and blank rows listed as left out; lines are shown in the order entered |
 | Exports | Working · tested | CSV, XLSX, PDF |
 | Mobile and responsive | Working · tested (layout) | Bottom navigation, camera capture, drawer, card lists, no horizontal overflow on tested pages |
 | Offline | Partial | Form drafts (localStorage) and a photo upload queue (IndexedDB) with sync status. **Other data entry is not available offline.** |

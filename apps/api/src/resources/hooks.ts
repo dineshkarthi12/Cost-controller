@@ -43,7 +43,7 @@ async function linesOrExisting(tx: Tx, data: Record<string, any>, existing: Reco
 
 export const HOOKS: Record<string, ResourceHooks> = {
   manpowerReports: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, ctx, scope, data, existing) {
       const date = data.date ?? existing?.date;
       if (date && date > addDays(new Date(), 1)) throw validationError('Manpower cannot be reported for a future date');
@@ -122,7 +122,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   mrs: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, _ctx, scope, data) {
       if (!data.lines) return;
       const stock = await projectStock(tx, scope.projectId!, data.lines.map((l: any) => l.materialId));
@@ -131,7 +131,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   prs: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, _ctx, scope, data, existing) {
       if (data.mrId) {
         const mr = await tx.materialRequisition.findFirst({ where: { id: data.mrId, projectId: scope.projectId! } });
@@ -172,7 +172,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   grns: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, _ctx, scope, data, existing) {
       const poId = data.poId ?? existing?.poId;
       const po = await tx.purchaseOrder.findFirst({ where: { id: poId, projectId: scope.projectId! }, include: { lines: true } });
@@ -216,7 +216,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   supplierInvoices: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, _ctx, scope, data, existing) {
       const m = { ...existing, ...data };
       if (m.poId) {
@@ -290,7 +290,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   budgetRevisions: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, _ctx, _scope, data, existing) {
       const ls = await linesOrExisting(tx, data, existing, 'budgetRevisionLine', 'revisionId');
       const total = sum(ls.map((l: any) => l.delta));
@@ -302,7 +302,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   subcontracts: {
-    include: { items: true },
+    include: { items: { orderBy: { id: 'asc' } } },
     async prepare(tx, _ctx, _scope, data, existing) {
       if (data.items) for (const i of data.items) i.amount = money(D(i.qty).times(D(i.rate)));
       const items = await linesOrExisting(tx, data, existing, 'subcontractItem', 'subcontractId', 'items');
@@ -311,7 +311,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   variations: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, _ctx, _scope, data, existing) {
       if (data.lines)
         for (const l of data.lines) {
@@ -345,7 +345,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   stockCounts: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, _ctx, scope, data, existing) {
       if (!data.lines) return;
       const storeId = data.storeId ?? existing?.storeId;
@@ -360,7 +360,7 @@ export const HOOKS: Record<string, ResourceHooks> = {
   },
 
   materialIssues: {
-    include: { lines: true },
+    include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, _ctx, scope, data, existing) {
       const m = { ...existing, ...data };
       if (['ADJUSTMENT', 'WASTAGE', 'DAMAGE'].includes(m.type) && !m.reason) throw validationError('A reason is required for adjustments, wastage and damage');
