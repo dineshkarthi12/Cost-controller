@@ -1,13 +1,13 @@
 import { useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Camera, ClipboardList, Download, HardHat, IndianRupee, Pencil, Plus, Sunrise, Sunset, Trash2, TrendingUp, Users } from 'lucide-react';
+import { Camera, ClipboardList, Download, FileSpreadsheet, HardHat, IndianRupee, Pencil, Plus, Sunrise, Sunset, Trash2, TrendingUp, Users } from 'lucide-react';
 import { defaultCrewSplit, gangProductivity, GANG_PROGRESS, LABOUR_UNITS, summariseProductivity, type GangProgress, type LabourNormInput, type ProductivityResult } from '@toprock/shared';
 import { api } from '../../lib/api';
 import { useAuth, useProjectId } from '../../lib/auth';
 import { formatDate, formatMoney, todayIso } from '../../lib/format';
 import { shrinkImage } from '../../lib/images';
-import { Badge, Button, Card, ConfirmDialog, EmptyState, Field, Input, KpiCard, LoadingBlock, PermissionDenied, Select, Textarea, cx } from '../../components/ui';
+import { Badge, Button, Card, ConfirmDialog, Dialog, EmptyState, Field, Input, KpiCard, LoadingBlock, PermissionDenied, Select, Textarea, cx } from '../../components/ui';
 import { RefSelect, type RefOption } from '../../components/forms/RefSelect';
 import { PageHeader } from '../../components/layout/AppShell';
 
@@ -138,7 +138,7 @@ export function DailyLabourPage() {
   const projectId = useProjectId();
   const { can } = useAuth();
   const [date, setDate] = useState(todayIso());
-  const [editing, setEditing] = useState<null | { stage: 'morning' | 'evening'; drafts: Draft[]; photo?: File; notes?: string[] }>(null);
+  const [editing, setEditing] = useState<null | { stage: 'morning' | 'evening'; drafts: Draft[]; photo?: File; notes?: string[]; fromExcel?: boolean }>(null);
   const qc = useQueryClient();
   const list = useQuery({ queryKey: ['p', 'dlr-list', projectId, date], queryFn: () => api.get<ListResponse>(`/projects/${projectId}/labour-reports`, { date }), enabled: !!projectId });
   const reportId = list.data?.items[0]?.id;
@@ -171,16 +171,16 @@ export function DailyLabourPage() {
       {list.isLoading || (reportId && report.isLoading) ? (
         <LoadingBlock rows={5} />
       ) : editing ? (
-        <ReportEditor key={editing.stage + date} projectId={projectId} date={date} report={report.data ?? null} stage={editing.stage} initial={editing.drafts} photo={editing.photo} notes={editing.notes} rates={rates} onCancel={() => setEditing(null)} onSaved={done} />
+        <ReportEditor key={editing.stage + date} projectId={projectId} date={date} report={report.data ?? null} stage={editing.stage} initial={editing.drafts} photo={editing.photo} notes={editing.notes} fromExcel={editing.fromExcel} rates={rates} onCancel={() => setEditing(null)} onSaved={done} />
       ) : !report.data ? (
-        <NoReport date={date} manage={manage} aiConfigured={list.data?.aiConfigured ?? false} projectId={projectId} onStart={(drafts, photo, notes) => setEditing({ stage: 'morning', drafts, photo, notes })} />
+        <NoReport date={date} manage={manage} aiConfigured={list.data?.aiConfigured ?? false} projectId={projectId} onStart={(drafts, photo, notes) => setEditing({ stage: 'morning', drafts, photo, notes })} onExcel={(drafts, stage, notes) => setEditing({ stage, drafts, notes, fromExcel: true })} />
       ) : (
         <ReportView
           report={report.data}
           projectId={projectId}
           manage={manage}
           aiConfigured={list.data?.aiConfigured ?? false}
-          onEdit={(stage, drafts, photo, notes) => setEditing({ stage, drafts: drafts ?? report.data!.gangs.map(fromGang), photo, notes })}
+          onEdit={(stage, drafts, photo, notes) => setEditing({ stage, drafts: drafts ?? report.data!.gangs.map(fromGang), photo, notes, fromExcel: !!drafts && !photo })}
           onDeleted={done}
         />
       )}
@@ -212,7 +212,6 @@ function usePhotoReader(projectId: string, stage: 'morning' | 'evening', onRead:
       ref={input}
       type="file"
       accept="image/*"
-      capture="environment"
       className="hidden"
       aria-label="Labour sheet photo"
       onChange={(e) => {
@@ -236,19 +235,104 @@ function PhotoButton({ aiConfigured, reader, label }: { aiConfigured: boolean; r
   );
 }
 
+
+/* ------------------------------------------------------------------ Excel upload */
+
+interface ExcelSheet {
+  sheet: string;
+  dates: string[];
+  matchesProject: boolean;
+  gangs: Array<{ work: string; workers: string[]; masons: number; helpers: number; normId: string | null; norm: NormInfo | null; doneQty: number | null; unit: string | null; progress: GangProgress; outcome: string | null }>;
+  warnings: string[];
+}
+
+function useExcelReader(projectId: string, date: string, onRead: (drafts: Draft[], stage: 'morning' | 'evening', notes: string[]) => void) {
+  const input = useRef<HTMLInputElement>(null);
+  const [choose, setChoose] = useState<ExcelSheet[] | null>(null);
+  const use = (sh: ExcelSheet) => {
+    setChoose(null);
+    if (!sh.gangs.length) return toast.error(sh.warnings[0] ?? 'No rows found for this date');
+    const drafts = sh.gangs.map((g) => ({ ...emptyDraft(), work: g.work, workersText: g.workers.join(', '), masons: String(g.masons), helpers: String(g.helpers), crewTouched: true, normId: g.normId, norm: g.norm, doneQty: g.doneQty !== null ? String(g.doneQty) : '', unit: g.unit ?? '', progress: g.progress, outcome: g.outcome ?? '' }));
+    const measured = sh.gangs.some((g) => g.doneQty !== null || g.progress !== 'PLANNED');
+    toast.success(`Filled ${drafts.length} rows from “${sh.sheet}”. Check them before saving.`);
+    onRead(drafts, measured ? 'evening' : 'morning', sh.warnings);
+  };
+  const m = useMutation({
+    mutationFn: (file: File) => {
+      const f = new FormData();
+      f.append('date', date);
+      f.append('file', file);
+      return api.upload<{ sheets: ExcelSheet[]; preferred: string | null }>(`/projects/${projectId}/labour-reports/import-excel`, f);
+    },
+    onSuccess: (r) => {
+      const pref = r.sheets.find((x) => x.sheet === r.preferred);
+      if (pref) use(pref);
+      else setChoose(r.sheets);
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const ui = (
+    <>
+      <input
+        ref={input}
+        type="file"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        className="hidden"
+        aria-label="Labour Excel file"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          e.target.value = '';
+          if (f) m.mutate(f);
+        }}
+      />
+      {choose && (
+        <Dialog open onOpenChange={(o) => !o && setChoose(null)} title="Which sheet is this project?" description="The file has more than one sheet. Choose the one for this site.">
+          <ul className="space-y-2">
+            {choose.map((sh) => (
+              <li key={sh.sheet}>
+                <Button variant="outline" className="w-full justify-between" disabled={!sh.gangs.length} onClick={() => use(sh)}>
+                  <span>{sh.sheet}</span>
+                  <span className="text-xs text-muted">{sh.gangs.length ? `${sh.gangs.length} rows` : 'no rows for this date'}</span>
+                </Button>
+              </li>
+            ))}
+          </ul>
+        </Dialog>
+      )}
+    </>
+  );
+  return { open: () => input.current?.click(), ui, reading: m.isPending };
+}
+
+function ExcelButtons({ reader, date }: { reader: ReturnType<typeof useExcelReader>; date: string }) {
+  return (
+    <>
+      {reader.ui}
+      <Button variant="outline" icon={<FileSpreadsheet className="h-4 w-4" />} loading={reader.reading} onClick={reader.open}>
+        Upload Excel
+      </Button>
+      <a className="inline-flex h-9 items-center gap-1 px-2 text-sm font-medium text-brand-600 underline hover:text-brand-700" href={api.url('/labour-reports/template', { date })} download>
+        Template
+      </a>
+    </>
+  );
+}
+
 /* ------------------------------------------------------------------ no report yet */
 
-function NoReport({ date, manage, aiConfigured, projectId, onStart }: { date: string; manage: boolean; aiConfigured: boolean; projectId: string; onStart: (d: Draft[], photo?: File, notes?: string[]) => void }) {
+function NoReport({ date, manage, aiConfigured, projectId, onStart, onExcel }: { date: string; manage: boolean; aiConfigured: boolean; projectId: string; onStart: (d: Draft[], photo?: File, notes?: string[]) => void; onExcel: (d: Draft[], stage: 'morning' | 'evening', notes: string[]) => void }) {
+  const excel = useExcelReader(projectId, date, onExcel);
   const reader = usePhotoReader(projectId, 'morning', (ex, photo) => onStart(ex.gangs.map((g) => withNames({ ...emptyDraft(), work: g.work }, g.workers.join(', '))), photo, ex.unreadable));
   return (
     <Card>
       <EmptyState
         icon={<Sunrise className="h-6 w-6" />}
         title={`No labour report for ${formatDate(date)}`}
-        description={manage ? 'Start with the morning allocation: take a photo of the handwritten sheet, or type it.' : 'Nothing has been entered for this day yet.'}
+        description={manage ? 'Start with the morning allocation: upload the Excel sheet, read a photo of the handwritten sheet, or type it.' : 'Nothing has been entered for this day yet.'}
         action={
           manage ? (
-            <div className="flex flex-wrap justify-center gap-2">
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <ExcelButtons reader={excel} date={date} />
               <PhotoButton aiConfigured={aiConfigured} reader={reader} label="Read sheet photo" />
               <Button icon={<Pencil className="h-4 w-4" />} onClick={() => onStart([emptyDraft()])}>
                 Type manually
@@ -279,6 +363,7 @@ function SummaryTiles({ s }: { s: Summary }) {
 function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted }: { report: Report; projectId: string; manage: boolean; aiConfigured: boolean; onEdit: (stage: 'morning' | 'evening', drafts?: Draft[], photo?: File, notes?: string[]) => void; onDeleted: () => void }) {
   const [confirm, setConfirm] = useState(false);
   const reader = usePhotoReader(projectId, 'evening', (ex, photo) => onEdit('evening', mergeEvening(report.gangs.map(fromGang), ex), photo, ex.unreadable));
+  const excel = useExcelReader(projectId, report.date.slice(0, 10), (drafts, stage, notes) => onEdit(stage, drafts, undefined, notes));
   const del = useMutation({ mutationFn: (reason: string) => fetch(api.url(`/projects/${projectId}/labour-reports/${report.id}`), { method: 'DELETE', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'toprock' }, body: JSON.stringify({ reason }) }).then(async (r) => { if (!r.ok) throw new Error((await r.json()).error?.message ?? 'Could not delete'); }), onSuccess: () => { toast.success('Report deleted'); onDeleted(); }, onError: (e: Error) => toast.error(e.message) });
   const photos = useQuery({ queryKey: ['p', 'dlr-photos', report.id], queryFn: () => api.get<Array<{ id: string; label: string; fileId: string; createdAt: string }>>(`/projects/${projectId}/attachments`, { entityType: 'dailyLabourReport', entityId: report.id }) });
   return (
@@ -290,6 +375,7 @@ function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted
         </div>
         {manage && (
           <div className="flex flex-wrap gap-2">
+            <ExcelButtons reader={excel} date={report.date.slice(0, 10)} />
             <PhotoButton aiConfigured={aiConfigured} reader={reader} label="Evening sheet photo" />
             <Button icon={<Sunset className="h-4 w-4" />} onClick={() => onEdit('evening')}>
               {report.status === 'COMPLETED' ? 'Edit evening update' : 'Evening update'}
@@ -363,7 +449,7 @@ function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted
 
 /* ------------------------------------------------------------------ editor */
 
-function ReportEditor({ projectId, date, report, stage, initial, photo, notes, rates, onCancel, onSaved }: { projectId: string; date: string; report: Report | null; stage: 'morning' | 'evening'; initial: Draft[]; photo?: File; notes?: string[]; rates: { masonRate: string; helperRate: string }; onCancel: () => void; onSaved: () => void }) {
+function ReportEditor({ projectId, date, report, stage, initial, photo, notes, fromExcel, rates, onCancel, onSaved }: { projectId: string; date: string; report: Report | null; stage: 'morning' | 'evening'; initial: Draft[]; photo?: File; notes?: string[]; fromExcel?: boolean; rates: { masonRate: string; helperRate: string }; onCancel: () => void; onSaved: () => void }) {
   const [drafts, setDrafts] = useState<Draft[]>(initial.length ? initial : [emptyDraft()]);
   const [remarks, setRemarks] = useState(report?.remarks ?? '');
   const evening = stage === 'evening';
@@ -414,6 +500,12 @@ function ReportEditor({ projectId, date, report, stage, initial, photo, notes, r
           <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             Filled from the photo. Handwriting can be misread: check every name and number before saving.
             {!!notes?.length && <span className="mt-1 block text-xs">Could not read: {notes.join('; ')}</span>}
+          </div>
+        )}
+        {fromExcel && (
+          <div className="mt-3 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900">
+            Filled from the Excel file{report ? ' (it replaces the rows already saved for this day)' : ''}. Check the rows, then save.
+            {!!notes?.length && <span className="mt-1 block text-xs">{notes.join(' · ')}</span>}
           </div>
         )}
       </Card>

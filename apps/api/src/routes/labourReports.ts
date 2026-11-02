@@ -10,6 +10,7 @@ import { accessibleProjectIds, assertCan, assertProjectAccess, can } from '../se
 import { audit } from '../services/audit.js';
 import { assertReportDate, createReportSchema, currentRates, loadReport, parseRange, prepareGangs, reportBodySchema, reportsInRange, reportSummary } from '../services/labourReports.js';
 import { buildLabourWorkbook } from '../services/labourExport.js';
+import { labourTemplate, readLabourWorkbook } from '../services/labourExcelImport.js';
 import { extractLabourSheet, labourSheetAiConfigured, MAX_SHEET_IMAGE_BYTES, SHEET_IMAGE_TYPES, type SheetImageType } from '../services/labourSheetAi.js';
 
 /** /projects/:projectId/labour-reports */
@@ -62,6 +63,38 @@ projectLabourRouter.post('/extract', upload.single('photo'), async (req, res) =>
   const draft = await extractLabourSheet(file.buffer, file.mimetype as SheetImageType, { stage, knownWorkers: await knownWorkers(projectId) });
   await audit(prisma, ctx, { action: 'LABOUR_SHEET_READ', entityType: 'dailyLabourReport', entityId: null, projectId, summary: `Labour sheet photo read (${stage}, ${draft.gangs.length} gangs)` });
   res.json(draft);
+});
+
+const xlsxUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024, files: 1 } });
+
+/** Reads an Excel labour sheet (TOPROCK workbook, this app's export, or the upload template) into a draft. Nothing is saved. */
+projectLabourRouter.post('/import-excel', xlsxUpload.single('file'), async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'manpower.manage', projectId);
+  if (!req.file) throw validationError('Choose an Excel file');
+  const date = typeof req.body?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date) ? req.body.date : isoDate(new Date())!;
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true, code: true } });
+  const sheets = await readLabourWorkbook(req.file.buffer);
+  const norms = new Map((await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId } })).map((n) => [n.code.toUpperCase(), n]));
+  const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2);
+  const projectWords = new Set([...words(project.name), project.code.toLowerCase()]);
+  const result = sheets.map((sh) => {
+    const forDate = sh.rows.filter((r) => r.date === date);
+    // Rows without a date, or a file holding a single other date, are offered with a warning.
+    const rows = forDate.length ? forDate : sh.dates.length <= 1 ? sh.rows : [];
+    const warnings: string[] = [];
+    if (!forDate.length && rows.length && sh.dates.length === 1) warnings.push(`This sheet is for ${sh.dates[0]}, not ${date}.`);
+    if (!rows.length) warnings.push(`No rows for ${date}. Dates in this sheet: ${sh.dates.join(', ')}`);
+    const gangs = rows.map(({ date: _d, normCode, ...g }) => {
+      const norm = normCode ? norms.get(normCode.toUpperCase()) : undefined;
+      if (normCode && !norm) warnings.push(`Norm code ${normCode} is not in Labour norms`);
+      return { ...g, normId: norm?.id ?? null, norm: norm ? { id: norm.id, code: norm.code, name: norm.name, unit: norm.unit, outputPerDay: norm.outputPerDay.toString(), masonsPerCrew: norm.masonsPerCrew, helpersPerCrew: norm.helpersPerCrew } : null };
+    });
+    return { sheet: sh.sheet, dates: sh.dates, matchesProject: words(sh.sheet).some((w) => projectWords.has(w)) || sh.sheet.toLowerCase() === project.code.toLowerCase(), gangs, warnings: [...new Set(warnings)] };
+  });
+  const preferred = result.find((r) => r.matchesProject && r.gangs.length) ?? (result.length === 1 ? result[0] : null);
+  res.json({ date, sheets: result, preferred: preferred?.sheet ?? null });
 });
 
 projectLabourRouter.get('/:id', async (req, res) => {
@@ -140,6 +173,15 @@ async function visibleProjects(req: Parameters<typeof ctxOf>[0], projectId?: unk
   const ids = (await accessibleProjectIds(prisma, ctx)).filter((id) => can(ctx, 'manpower.view', id));
   return typeof projectId === 'string' && projectId ? ids.filter((id) => id === projectId) : ids;
 }
+
+labourRouter.get('/template', async (req, res) => {
+  const ctx = ctxOf(req);
+  const norms = await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId, active: true }, orderBy: { code: 'asc' } });
+  const date = typeof req.query.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date) ? req.query.date : isoDate(new Date())!;
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="Daily_Labour_Upload_Template.xlsx"');
+  res.send(await labourTemplate(norms, date));
+});
 
 labourRouter.get('/summary', async (req, res) => {
   const { from, to } = parseRange(req.query);

@@ -205,3 +205,81 @@ describe('reading a photo of the handwritten sheet', () => {
     expect(r.status).toBe(403);
   });
 });
+
+describe('filling the report from an Excel file', () => {
+  const upload = (buf: Buffer, date = day(0), name = 'labour.xlsx') =>
+    se.post(`/api${base()}/import-excel`).set('X-Requested-With', 'toprock').field('date', date).attach('file', buf, { filename: name });
+
+  /** Same layout as TOPROCK's productivity workbook: header on row 4, a merged date banner, quantity/unit/norm code in O–Q without headers. */
+  async function toprockStyle(sheets: Record<string, Array<[string, string, string, number, number, number | null, string | null, string | null]>>) {
+    const wb = new ExcelJS.Workbook();
+    for (const [name, rows] of Object.entries(sheets)) {
+      const ws = wb.addWorksheet(name);
+      ws.getCell('A1').value = `${name} – Work & Labour Check`;
+      ws.getRow(4).values = ['Date', 'Work', 'Workers', 'Done Qty', 'Per-Day Norm', 'Should Do Qty (norm × masons)', 'Output %', 'Mason Used', 'Helper Used', 'Mason Needed', 'Helper Needed', 'Labour Cost ₹', 'Result', 'Profit / Loss ₹'];
+      ws.mergeCells('A5:N5');
+      ws.getCell('A5').value = 'Banner (Thursday)';
+      rows.forEach(([work, workers, done, m, h, qty, unit, code], i) => {
+        const r = ws.getRow(6 + i);
+        r.values = [new Date(`${day(0)}T00:00:00Z`), work, workers, done, '-', '-', '-', m, h];
+        if (qty !== null) Object.assign(r.getCell(15), { value: qty }), (r.getCell(16).value = unit), (r.getCell(17).value = code);
+      });
+      ws.getRow(6 + rows.length).getCell(2).value = 'TOTAL';
+    }
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+
+  it('reads the TOPROCK workbook layout, matching norm codes and the project sheet', async () => {
+    const sheetName = w.project.name.split(' ')[1]; // a word of the project name, like "Ponram" or "Kadara"
+    const buf = await toprockStyle({
+      Other: [['Some work', 'A, B', '-', 1, 1, null, null, null]],
+      [sheetName]: [
+        ['Pipe running – done', 'Ravi, Mani, Selva', '125 Rft', 1, 2, 125, 'Rft', 'PIPE-RUN'],
+        ['Glue filling + brick installation – 110 Nos installed', 'Arun, Babu, Charan', '110 Nos', 1, 2, 110, 'Nos', 'BRICK-NOS'],
+        ['Steps cladding (20% pending)', 'Raj, Ankit', '-', 1, 1, null, null, null],
+        ['Light box framing – 9 of 48 Nos complete', 'Prem', '9 Nos (no norm)', 0, 1, null, null, null],
+        ['Unknown norm work', 'Dev', '5 Nos', 1, 0, 5, 'Nos', 'NOT-A-CODE'],
+      ],
+    });
+    const r = await upload(buf);
+    expect(r.status).toBe(200);
+    expect(r.body.preferred).toBe(sheetName);
+    const sh = r.body.sheets.find((s: any) => s.sheet === sheetName);
+    expect(sh.gangs.map((g: any) => g.work)).toEqual(['Pipe running', 'Glue filling + brick installation', 'Steps cladding (20% pending)', 'Light box framing', 'Unknown norm work']);
+    expect(sh.gangs[0]).toMatchObject({ workers: ['Ravi', 'Mani', 'Selva'], masons: 1, helpers: 2, doneQty: 125, unit: 'Rft', progress: 'DONE', normId: norms['PIPE-RUN'].id });
+    expect(sh.gangs[1]).toMatchObject({ outcome: '110 Nos installed', normId: norms['BRICK-NOS'].id });
+    expect(sh.gangs[2]).toMatchObject({ doneQty: null, progress: 'IN_PROGRESS' });
+    expect(sh.gangs[3]).toMatchObject({ doneQty: 9, unit: 'Nos', normId: null, masons: 0, helpers: 1 }); // quantity without a norm: not measured
+    expect(sh.warnings).toContain('Norm code NOT-A-CODE is not in Labour norms');
+  });
+
+  it('the downloadable template round-trips, and nothing is saved by reading a file', async () => {
+    const t = await se.get(`/api/labour-reports/template?date=${day(-2)}`).set('X-Requested-With', 'toprock').buffer(true).parse((res, cb) => {
+      const chunks: Buffer[] = [];
+      res.on('data', (c: Buffer) => chunks.push(c));
+      res.on('end', () => cb(null, Buffer.concat(chunks)));
+    });
+    expect(t.status).toBe(200);
+    const wb = new ExcelJS.Workbook();
+    await wb.xlsx.load(t.body as any);
+    expect(wb.worksheets.map((s) => s.name)).toEqual(['Labour', 'Norm codes']);
+    const ws = wb.getWorksheet('Labour')!;
+    ws.addRow([new Date(`${day(-2)}T00:00:00Z`), 'Painting lobby', 'Kannan, Ravi', 1, 1, 300, 'Sq.ft', 'PAINT-2C', '300 sq ft done']);
+    const before = await prisma.dailyLabourReport.count();
+    const r = await upload(Buffer.from(await wb.xlsx.writeBuffer()), day(-2));
+    expect(r.status).toBe(200);
+    const g = r.body.sheets[0].gangs;
+    expect(g).toHaveLength(2); // the example row and ours
+    expect(g[1]).toMatchObject({ work: 'Painting lobby', masons: 1, helpers: 1, doneQty: 300, unit: 'Sq.ft', normId: norms['PAINT-2C'].id, outcome: '300 sq ft done', progress: 'DONE' });
+    expect(await prisma.dailyLabourReport.count()).toBe(before);
+  });
+
+  it('explains files it cannot use', async () => {
+    expect((await upload(Buffer.from('not a spreadsheet'))).status).toBe(422);
+    const wb = new ExcelJS.Workbook();
+    wb.addWorksheet('Notes').getCell('A1').value = 'nothing here';
+    const r = await upload(Buffer.from(await wb.xlsx.writeBuffer()));
+    expect(r.status).toBe(422);
+    expect(r.body.error.message).toMatch(/Work.*Workers/);
+  });
+});
