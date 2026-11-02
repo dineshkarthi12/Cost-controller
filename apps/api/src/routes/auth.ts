@@ -145,6 +145,7 @@ authRouter.get('/me', requireAuth, async (req, res) => {
     permissions: permissionsFor(ctx, validProject),
     roles: roleCodesFor(ctx, validProject),
     visibleModules: settings.visibleModules.filter((k) => MODULES.some((m) => m.key === k)),
+    whatsappContacts: settings.whatsappContacts,
   });
 });
 

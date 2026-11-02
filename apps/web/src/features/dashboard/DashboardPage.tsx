@@ -9,6 +9,7 @@ import { useAuth, useProjectId } from '../../lib/auth';
 import { formatDate, formatMoney, formatMoneyCompact, formatPct, relativeTime } from '../../lib/format';
 import { Badge, Card, EmptyState, ErrorState, Input, KpiCard, LoadingBlock, ProgressBar, StatusBadge, cx } from '../../components/ui';
 import { Page } from '../../components/layout/AppShell';
+import { WhatsAppShare } from '../share/WhatsAppShare';
 import { ChartCard, ChartTooltip, GRID, SERIES, axisProps, moneyTick } from '../../components/data/charts';
 
 interface Dashboard {
@@ -96,6 +97,7 @@ export function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Date range for trends">
+          {projectId && <WhatsAppShare what="Daily progress report" label="Today's report →" text={() => api.get<{ text: string }>(`/projects/${projectId}/daily-digest`).then((r) => r.text)} />}
           <Input type="date" className="w-auto" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} aria-label="Trend from" />
           <span className="text-xs text-muted">to</span>
           <Input type="date" className="w-auto" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} aria-label="Trend to" />

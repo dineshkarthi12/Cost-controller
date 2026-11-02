@@ -5,3 +5,4 @@ export * from './modules.js';
 export * from './statuses.js';
 export * from './docTypes.js';
 export * from './resources/index.js';
+export * from './whatsapp.js';

@@ -26,3 +26,10 @@ export function today(): Date {
 export function addDays(d: Date, n: number): Date {
   return new Date(d.getTime() + n * 86_400_000);
 }
+
+/** Offset of the organisation's time zone from UTC on a date, in minutes (e.g. +330 for India). */
+export function tzOffsetMinutes(tz: string, at: Date) {
+  const local = new Date(at.toLocaleString('en-US', { timeZone: tz }));
+  const utc = new Date(at.toLocaleString('en-US', { timeZone: 'UTC' }));
+  return Math.round((local.getTime() - utc.getTime()) / 60000);
+}

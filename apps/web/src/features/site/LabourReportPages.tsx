@@ -10,6 +10,7 @@ import { shrinkImage } from '../../lib/images';
 import { Badge, Button, Card, ConfirmDialog, Dialog, EmptyState, Field, Input, KpiCard, LoadingBlock, PermissionDenied, Select, Textarea, cx } from '../../components/ui';
 import { RefSelect, type RefOption } from '../../components/forms/RefSelect';
 import { PageHeader } from '../../components/layout/AppShell';
+import { WhatsAppShare } from '../share/WhatsAppShare';
 
 /* ------------------------------------------------------------------ types */
 
@@ -175,6 +176,14 @@ export function DailyLabourPage() {
             <a className="inline-flex h-9 items-center justify-center gap-2 rounded-lg px-3.5 text-sm font-medium transition-colors border border-line bg-white text-ink hover:bg-slate-50" href={api.url('/labour-reports/export', { date, projectId })} download>
               <Download className="h-4 w-4" /> Excel
             </a>
+            {!!reportId && (
+              <WhatsAppShare
+                size="md"
+                what={`Daily progress report ${date}`}
+                text={() => api.get<{ text: string }>(`/projects/${projectId}/daily-digest`, { date }).then((r) => r.text)}
+                file={() => fetch(api.url('/labour-reports/export', { date, projectId }), { credentials: 'include' }).then(async (r) => { if (!r.ok) throw new Error('Could not get the Excel'); return new File([await r.blob()], `Labour-report-${date}.xlsx`, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }); })}
+              />
+            )}
           </div>
         }
       />

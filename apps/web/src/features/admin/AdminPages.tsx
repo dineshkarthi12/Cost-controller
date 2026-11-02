@@ -439,6 +439,7 @@ interface OrgSettings {
   dataRetentionYears: number;
   masonDayRate: string;
   helperDayRate: string;
+  whatsappContacts: Array<{ name: string; role: string; phone: string }>;
 }
 interface SettingsResp {
   org: { id: string; name: string; code: string; baseCurrency: string; timezone: string; isDemo: boolean };
@@ -542,6 +543,23 @@ function GeneralSettings() {
           <Field label="Mason day rate (₹)" help="Used in new daily labour reports"><Input inputMode="decimal" value={d.settings.masonDayRate} disabled={ro} onChange={(e) => ss({ masonDayRate: e.target.value })} /></Field>
           <Field label="Helper day rate (₹)" help="Used in new daily labour reports"><Input inputMode="decimal" value={d.settings.helperDayRate} disabled={ro} onChange={(e) => ss({ helperDayRate: e.target.value })} /></Field>
           <Field label="Duplicate measurements"><Select options={[{ value: 'BLOCK_UNLESS_REASON', label: 'Block unless a reason is given' }, { value: 'WARN', label: 'Warn only' }]} value={d.settings.measurementDuplicateMode} disabled={ro} onChange={(e) => ss({ measurementDuplicateMode: e.target.value })} /></Field>
+        </div>
+      </Card>
+      <Card title="WhatsApp contacts" subtitle="One click sends the daily progress report, BOQ, BOM, PO, MR or any record to these people on WhatsApp." className="lg:col-span-2">
+        <div className="space-y-2">
+          {(d.settings.whatsappContacts ?? []).map((c, i) => {
+            const upd = (p: Partial<typeof c>) => ss({ whatsappContacts: d.settings.whatsappContacts.map((x, j) => (j === i ? { ...x, ...p } : x)) });
+            return (
+              <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_auto]">
+                <Field label="Name"><Input value={c.name} disabled={ro} placeholder="Gowtham" onChange={(e) => upd({ name: e.target.value })} /></Field>
+                <Field label="Role"><Input value={c.role} disabled={ro} placeholder="Executive Director" onChange={(e) => upd({ role: e.target.value })} /></Field>
+                <Field label="WhatsApp number" help="With country code"><Input value={c.phone} disabled={ro} inputMode="tel" placeholder="+91 98765 43210" onChange={(e) => upd({ phone: e.target.value })} /></Field>
+                {!ro && <div className="flex items-end pb-1"><Button variant="ghost" className="text-red-600" onClick={() => ss({ whatsappContacts: d.settings.whatsappContacts.filter((_, j) => j !== i) })}>Remove</Button></div>}
+              </div>
+            );
+          })}
+          {!d.settings.whatsappContacts?.length && <p className="text-sm text-muted">No contacts yet. The first contact gets the one-click button; others are in its menu.</p>}
+          {!ro && <Button variant="outline" size="sm" onClick={() => ss({ whatsappContacts: [...(d.settings.whatsappContacts ?? []), { name: '', role: '', phone: '' }] })}>Add contact</Button>}
         </div>
       </Card>
       {!ro && (

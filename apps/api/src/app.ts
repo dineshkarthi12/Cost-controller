@@ -35,6 +35,7 @@ import { manpowerRouter } from './routes/manpower.js';
 import { scheduleRouter } from './routes/schedule.js';
 import { qualityRouter } from './routes/quality.js';
 import { labourRouter, projectLabourRouter } from './routes/labourReports.js';
+import { dailyDigestRouter } from './routes/dailyDigest.js';
 import { bomRouter } from './routes/bom.js';
 import { workReportsRouter } from './routes/workReports.js';
 import { runAllJobs } from './jobs.js';
@@ -100,6 +101,7 @@ export function createApp() {
   api.use('/projects/:projectId/schedule', scheduleRouter);
   api.use('/projects/:projectId/inspections', qualityRouter);
   api.use('/projects/:projectId/labour-reports', projectLabourRouter);
+  api.use('/projects/:projectId/daily-digest', dailyDigestRouter);
   api.use('/labour-reports', labourRouter);
   api.use('/projects/:projectId/bom', bomRouter);
   api.use('/work-reports', workReportsRouter);

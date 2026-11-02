@@ -13,6 +13,8 @@ import { RefSelect } from '../../components/forms/RefSelect';
 import { ResourceForm } from '../../components/forms/ResourceForm';
 import { ApprovalTimeline, AttachmentsPanel, AuditTimeline, CommentsPanel, LinkedEvidence } from '../../components/record/Panels';
 import { Page, PageHeader } from '../../components/layout/AppShell';
+import { WhatsAppShare } from '../share/WhatsAppShare';
+import { recordShareText } from '../share/shareText';
 import { EXTENSIONS } from './extensions';
 
 export type Rec = Record<string, unknown> & { id: string; _labels?: Record<string, string | null>; _permissions?: { canEdit: boolean; canSubmit: boolean; canDelete: boolean; canCancel: boolean } };
@@ -85,12 +87,13 @@ function useListState(def: ResourceDef) {
   return { state, update };
 }
 
-export function ResourceList({ resourceKey, basePath, title, subtitle, actions, fixedFilters, hideHeader, createLabel, statusOptions }: { resourceKey: string; basePath: string; title?: string; subtitle?: ReactNode; actions?: ReactNode; fixedFilters?: Record<string, string>; hideHeader?: boolean; createLabel?: string; statusOptions?: readonly string[] }) {
+export function ResourceList({ resourceKey, basePath, title, subtitle, actions, fixedFilters, hideHeader, createLabel, statusOptions, altView }: { resourceKey: string; basePath: string; title?: string; subtitle?: ReactNode; actions?: ReactNode; fixedFilters?: Record<string, string>; hideHeader?: boolean; createLabel?: string; statusOptions?: readonly string[]; /** Another way to show the records (e.g. the BOQ as in Excel), shown first. */ altView?: { label: string; element: ReactNode } }) {
   const def = RESOURCES[resourceKey];
   const projectId = useProjectId();
   const { can, project } = useAuth();
   const navigate = useNavigate();
   const { state, update } = useListState(def);
+  const [viewParams, setViewParams] = useSearchParams();
   const [search, setSearch] = useState(state.q);
   const params = { page: state.page, pageSize: state.pageSize, sort: state.sort, dir: state.dir, q: state.q, from: state.from, to: state.to, ...Object.fromEntries(Object.entries(state.filters).filter(([, v]) => v)), ...fixedFilters };
   const q = useQuery({ queryKey: ['p', 'list', resourceKey, projectId, params], queryFn: () => api.get<Paged<Rec>>(resourcePath(def, projectId), params), enabled: !def.projectScoped || !!projectId, placeholderData: (prev) => prev });
@@ -108,6 +111,16 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
   const canCreate = can(`${def.area}.manage`);
   if (!can(`${def.area}.view`)) return <PermissionDenied />;
   const titleField = listFields[0];
+  const showAlt = !!altView && viewParams.get('view') !== 'list';
+  const viewToggle = altView && (
+    <div className="inline-flex rounded-lg border border-line bg-white p-0.5 text-sm" role="group" aria-label="View">
+      {[{ v: 'alt', l: altView.label }, { v: 'list', l: 'List' }].map((o) => (
+        <button key={o.v} type="button" className={cx('rounded-md px-3 py-1.5', (o.v === 'alt') === showAlt ? 'bg-navy-800 text-white' : 'text-muted hover:text-ink')} onClick={() => { const n = new URLSearchParams(viewParams); if (o.v === 'list') n.set('view', 'list'); else n.delete('view'); setViewParams(n, { replace: true }); }}>
+          {o.l}
+        </button>
+      ))}
+    </div>
+  );
 
   return (
     <>
@@ -117,6 +130,7 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
           subtitle={subtitle ?? def.description}
           actions={
             <>
+              {viewToggle}
               {actions}
               <Button variant="outline" icon={<Download className="h-4 w-4" />} disabled={!q.data?.items.length} onClick={() => downloadCsv(`${def.key}.csv`, listFields.map((f) => ({ key: f.name, label: f.label })), (q.data?.items ?? []).map((r) => Object.fromEntries(listFields.map((f) => [f.name, f.type === 'ref' ? (r._labels?.[f.name] ?? '') : (r[f.name] as string)]))))}>
                 CSV
@@ -130,6 +144,7 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
           }
         />
       )}
+      {showAlt ? altView!.element : (
       <Card bodyClassName="p-0">
         <FilterBar>
           <form
@@ -192,6 +207,7 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
           )}
         />
       </Card>
+      )}
     </>
   );
 }
@@ -268,6 +284,11 @@ export function ResourceDetail({ resourceKey, basePath, breadcrumbs }: { resourc
         actions={
           <>
             {ext?.actions?.(ctx)}
+            <WhatsAppShare
+              what={`${def.label} ${title}`}
+              text={recordShareText(def, rec as Record<string, unknown> & { _labels?: Record<string, string> }, def.projectScoped ? project?.name : undefined, project?.currency)}
+              file={def.model === 'purchaseOrder' ? () => fetch(api.url(`/projects/${projectId}/procurement/po/${id}/pdf`), { credentials: 'include' }).then(async (r) => { if (!r.ok) throw new Error('Could not get the PO PDF'); return new File([await r.blob()], `${title}.pdf`, { type: 'application/pdf' }); }) : undefined}
+            />
             {perms.canEdit && (
               <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => navigate(`${basePath}/${id}/edit`)}>
                 Edit
