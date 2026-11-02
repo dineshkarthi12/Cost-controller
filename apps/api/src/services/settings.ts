@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { MODULES } from '@toprock/shared';
+import { MODULES, MODULES_ADDED_LATER } from '@toprock/shared';
 import type { Db } from '../lib/prisma.js';
 
 export const orgSettingsSchema = z.object({
@@ -12,6 +12,8 @@ export const orgSettingsSchema = z.object({
   measurementDuplicateMode: z.enum(['BLOCK_UNLESS_REASON', 'WARN']).default('BLOCK_UNLESS_REASON'),
   autoBudgetRevisionFromVariation: z.boolean().default(true),
   visibleModules: z.array(z.string()).default(MODULES.map((m) => m.key)),
+  /** Later modules already offered to this organisation (so hiding one sticks). */
+  modulesOffered: z.array(z.string()).default([]),
   rounding: z.enum(['HALF_UP']).default('HALF_UP'),
   dataRetentionYears: z.number().int().min(1).max(50).default(10),
   // Daily labour report day rates (defaults from TOPROCK's productivity workbook); each report keeps the rates it was created with.
@@ -23,5 +25,12 @@ export type OrgSettings = z.infer<typeof orgSettingsSchema>;
 
 export async function getOrgSettings(db: Db, orgId: string): Promise<OrgSettings> {
   const org = await db.organisation.findUnique({ where: { id: orgId }, select: { settings: true } });
-  return orgSettingsSchema.parse(org?.settings ?? {});
+  const s = orgSettingsSchema.parse(org?.settings ?? {});
+  // Modules added after the organisation was set up are shown until an administrator hides them.
+  for (const k of MODULES_ADDED_LATER) {
+    if (s.modulesOffered.includes(k)) continue;
+    if (!s.visibleModules.includes(k)) s.visibleModules.push(k);
+    s.modulesOffered.push(k);
+  }
+  return s;
 }

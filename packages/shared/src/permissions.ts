@@ -52,6 +52,8 @@ export const SPECIAL_PERMISSIONS = {
   'audit.view': 'View the audit trail',
   'integration.manage': 'Configure integrations',
   'import.manage': 'Run data imports',
+  'workreport.submit': 'Write a daily work report (office QS / estimation team)',
+  'workreport.review': 'Review the team’s daily work reports',
 } as const;
 
 export type Permission = `${PermissionArea}.${PermissionAction}` | keyof typeof SPECIAL_PERMISSIONS;
@@ -90,13 +92,13 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     code: 'COMPANY_ADMIN',
     name: 'Company Admin',
     description: 'Organisation administration, users, settings',
-    permissions: [...allView(), 'project.manage', 'team.manage', 'project.all', 'user.manage', 'role.manage', 'settings.manage', 'audit.view', 'integration.manage', 'import.manage', 'report.export'],
+    permissions: [...allView(), 'project.manage', 'team.manage', 'project.all', 'user.manage', 'role.manage', 'settings.manage', 'audit.view', 'integration.manage', 'import.manage', 'report.export', 'workreport.review'],
   },
   {
     code: 'PROJECT_DIRECTOR',
     name: 'Project Director',
     description: 'Portfolio oversight and high-value approvals',
-    permissions: [...allView(), ...approve(...AREAS), 'project.manage', 'project.all', 'period.reopen', 'report.export', 'audit.view'],
+    permissions: [...allView(), ...approve(...AREAS), 'project.manage', 'project.all', 'period.reopen', 'report.export', 'audit.view', 'workreport.review'],
   },
   {
     code: 'PROJECT_MANAGER',
@@ -115,19 +117,27 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
       'report.export',
       'import.manage',
       'audit.view',
+      'workreport.submit',
+      'workreport.review',
     ],
   },
   {
     code: 'COST_CONTROLLER',
     name: 'Cost Controller',
     description: 'Cost recording, forecasts and reconciliations',
-    permissions: [...allView(), ...manage('budget', 'forecast', 'costcode', 'expense', 'cashflow', 'period', 'task', 'report', 'boq'), 'report.export', 'import.manage'],
+    permissions: [...allView(), ...manage('budget', 'forecast', 'costcode', 'expense', 'cashflow', 'period', 'task', 'report', 'boq'), 'report.export', 'import.manage', 'workreport.submit'],
   },
   {
     code: 'QUANTITY_SURVEYOR',
     name: 'Quantity Surveyor',
     description: 'BOQ, takeoff, measurements, bills and variations',
-    permissions: [...allView(), ...manage('boq', 'measurement', 'subbill', 'clientbill', 'variation', 'task', 'evidence'), ...approve('measurement'), 'report.export', 'import.manage'],
+    permissions: [...allView(), ...manage('boq', 'measurement', 'subbill', 'clientbill', 'variation', 'task', 'evidence'), ...approve('measurement'), 'report.export', 'import.manage', 'workreport.submit'],
+  },
+  {
+    code: 'ESTIMATOR',
+    name: 'Estimator',
+    description: 'Estimation, BOQ, BOM, rate analysis and quotation comparison',
+    permissions: [...allView(), ...manage('boq', 'task'), 'report.export', 'import.manage', 'workreport.submit'],
   },
   {
     code: 'SITE_ENGINEER',
@@ -179,7 +189,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
     code: 'BILLING_ENGINEER',
     name: 'Billing Engineer',
     description: 'Client and contractor billing',
-    permissions: [...view('project', 'task', 'boq', 'measurement', 'variation', 'costcode', 'report', 'subcontract', 'evidence'), ...manage('clientbill', 'subbill', 'measurement', 'task'), 'report.export'],
+    permissions: [...view('project', 'task', 'boq', 'measurement', 'variation', 'costcode', 'report', 'subcontract', 'evidence'), ...manage('clientbill', 'subbill', 'measurement', 'task'), 'report.export', 'workreport.submit'],
   },
   {
     code: 'QUALITY_ENGINEER',
@@ -201,7 +211,7 @@ export const DEFAULT_ROLES: RoleTemplate[] = [
   },
   { code: 'APPROVER', name: 'Approver', description: 'Approves documents routed to them', permissions: [...allView(), ...approve(...AREAS)] },
   { code: 'AUDITOR', name: 'Auditor', description: 'Read-only with audit trail', permissions: [...allView(), 'audit.view', 'project.all', 'report.export'] },
-  { code: 'MANAGEMENT_READONLY', name: 'Read-only Management User', description: 'Read-only dashboards and reports', permissions: [...allView(), 'project.all'] },
+  { code: 'MANAGEMENT_READONLY', name: 'Read-only Management User', description: 'Read-only dashboards and reports', permissions: [...allView(), 'project.all', 'workreport.review'] },
 ];
 
 export function dedupePermissions(perms: string[]): string[] {

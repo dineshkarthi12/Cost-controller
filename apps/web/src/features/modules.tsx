@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { useLocation } from 'react-router';
 import { moduleByKey } from '@toprock/shared';
+import { useAuth } from '../lib/auth';
 import { Page } from '../components/layout/AppShell';
 import { ModuleTabsNav, ResourceCreate, ResourceDetail, ResourceEdit, ResourceList } from './resources/ResourceViews';
 
@@ -15,10 +16,14 @@ export interface TabDef {
   /** Custom detail page. */
   detailElement?: ReactNode;
   listProps?: Partial<Parameters<typeof ResourceList>[0]>;
+  /** Show the tab only to users holding one of these permissions. */
+  anyOf?: string[];
 }
 
-export function ModuleShell({ moduleKey, tabs, children }: { moduleKey: string; tabs: TabDef[]; children: ReactNode }) {
+export function ModuleShell({ moduleKey, tabs: allTabs, children }: { moduleKey: string; tabs: TabDef[]; children: ReactNode }) {
   const location = useLocation();
+  const { can } = useAuth();
+  const tabs = allTabs.filter((t) => !t.anyOf || t.anyOf.some((p) => can(p)));
   const mod = moduleByKey(moduleKey);
   const active = tabs.find((t) => t.path === location.pathname)?.path ?? tabs[0]?.path ?? '';
   return (

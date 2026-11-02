@@ -828,6 +828,43 @@ async function main() {
   }
   console.log('✔ Tasks & responsibility matrix');
 
+  // Daily work reports of the office QS / estimation team (yesterday reviewed, today in progress)
+  const AR = await as('arun.prakash');
+  const DK = await as('dinesh.kumar');
+  const VS = await as('vikram.shah');
+  const wrA = await AR.put('/work-reports/me', {
+    date: d(-1),
+    submit: true,
+    summary: 'Waiting for revised ceiling drawings for Tower B',
+    items: [
+      { kind: 'DONE', category: 'MEASUREMENT', projectId: RH.id, description: 'Checked MB entries for block work L7–L8', output: '14 entries', status: 'DONE', hours: 3 },
+      { kind: 'DONE', category: 'BOQ', projectId: RH.id, description: 'Updated BOQ quantities for finishing package', output: '42 items', status: 'IN_PROGRESS', hours: 4 },
+      { kind: 'DONE', category: 'MEETING', projectId: RH.id, description: 'Site coordination meeting with PM', status: 'DONE', hours: 1 },
+      { kind: 'PLAN', category: 'BOQ', projectId: RH.id, description: 'Complete finishing package BOQ update' },
+      { kind: 'PLAN', category: 'QUANTITY_TAKEOFF', projectId: RH.id, description: 'Take-off for Tower B ceiling (after revised drawing)' },
+    ],
+  });
+  await DK.put('/work-reports/me', {
+    date: d(-1),
+    submit: true,
+    items: [
+      { kind: 'DONE', category: 'COST_REPORT', projectId: RH.id, description: 'Monthly cost report draft', output: 'Sections 1–4', status: 'IN_PROGRESS', hours: 5 },
+      { kind: 'DONE', category: 'VENDOR_COMPARISON', projectId: RH.id, description: 'Compared 3 quotations for MEP conduits', status: 'DONE', hours: 2.5 },
+      { kind: 'PLAN', category: 'COST_REPORT', projectId: RH.id, description: 'Finish monthly cost report and send to PD' },
+    ],
+  });
+  await VS.post(`/work-reports/${wrA.id}/review`, { comment: 'Good. Close the BOQ update before starting the take-off.', markReviewed: true });
+  const plan = (wrA.items as Array<{ id: string; kind: string; description: string; category: string }>).filter((i) => i.kind === 'PLAN');
+  await AR.put('/work-reports/me', {
+    date: d(0),
+    items: [
+      { kind: 'DONE', category: plan[0].category, projectId: RH.id, description: plan[0].description, status: 'DONE', hours: 5, output: '42 items', carriedFromId: plan[0].id },
+      { kind: 'DONE', category: plan[1].category, projectId: RH.id, description: plan[1].description, status: 'BLOCKED', hours: 0.5, output: 'Drawing not received', carriedFromId: plan[1].id },
+      { kind: 'PLAN', category: 'BOM', projectId: RH.id, description: 'Prepare BOM for finishing package' },
+    ],
+  });
+  console.log('✔ Daily work reports');
+
   // ───────── Physical stock count & oldest period close ─────────
   const cnt = await PR.post(`${P}/r/stockCounts`, { storeId: stores.main.id, countDate: d(-1), remarks: 'Monthly physical verification', lines: [{ materialId: mats['CEM-OPC53'].id, countedQty: '1350' }, { materialId: mats['STL-FE500'].id, countedQty: '318.5' }] });
   await PR.post(`${P}/stock/counts/${cnt.id}/post`);

@@ -15,7 +15,7 @@ const COLLAPSE_KEY = 'tr.sidebarCollapsed';
 
 function useVisibleModules(): ModuleDef[] {
   const { me, can } = useAuth();
-  return useMemo(() => MODULES.filter((m) => (me?.visibleModules ?? []).includes(m.key) || m.key === 'dashboard' || m.key === 'settings').filter((m) => can(m.permission)), [me, can]);
+  return useMemo(() => MODULES.filter((m) => (me?.visibleModules ?? []).includes(m.key) || m.key === 'dashboard' || m.key === 'settings').filter((m) => can(m.permission) || !!m.anyPermission?.some((p) => can(p))), [me, can]);
 }
 
 function Logo({ compact }: { compact?: boolean }) {

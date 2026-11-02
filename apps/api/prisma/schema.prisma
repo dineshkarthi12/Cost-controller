@@ -46,6 +46,7 @@ model Organisation {
   responsibility ResponsibilityAssignment[]
   checklistTpls  ChecklistTemplate[]
   labourNorms    LabourNorm[]
+  workReports    WorkReport[]
 }
 
 model User {
@@ -138,6 +139,8 @@ model User {
   rel_taskHandover_createdBy TaskHandover[] @relation("TaskHandover_createdById")
   rel_closeout_createdBy Closeout[] @relation("Closeout_createdById")
   rel_closeoutItem_owner CloseoutItem[] @relation("CloseoutItem_ownerId")
+  workReports         WorkReport[] @relation("WorkReportAuthor")
+  workReportsReviewed WorkReport[] @relation("WorkReportReviewer")
 }
 
 model Role {
@@ -368,6 +371,7 @@ model Project {
   rel_cashFlowPlan_project CashFlowPlan[] @relation("CashFlowPlan_projectId")
   rel_boqItem_project BoqItem[] @relation("BoqItem_projectId")
   bomItems BomItem[]
+  workReportItems WorkReportItem[]
   rel_quantityTakeoff_project QuantityTakeoff[] @relation("QuantityTakeoff_projectId")
   rel_measurement_project Measurement[] @relation("Measurement_projectId")
   rel_activity_project Activity[] @relation("Activity_projectId")
@@ -3124,4 +3128,49 @@ model BomLine {
   bomItem BomItem @relation(fields: [bomItemId], references: [id], onDelete: Cascade)
 
   @@index([bomItemId])
+}
+
+/// Daily work report of an office team member (QS / estimation): today's work with hours, and tomorrow's plan.
+model WorkReport {
+  id            String    @id @default(cuid())
+  orgId         String
+  userId        String
+  date          DateTime  @db.Date
+  status        String    @default("DRAFT") // DRAFT | SUBMITTED | REVIEWED
+  summary       String?
+  totalHours    Decimal   @default(0) @db.Decimal(5, 2)
+  submittedAt   DateTime?
+  reviewedById  String?
+  reviewedAt    DateTime?
+  reviewComment String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  org      Organisation     @relation(fields: [orgId], references: [id])
+  user     User             @relation("WorkReportAuthor", fields: [userId], references: [id], onDelete: Restrict)
+  reviewer User?            @relation("WorkReportReviewer", fields: [reviewedById], references: [id], onDelete: Restrict)
+  items    WorkReportItem[]
+
+  @@unique([userId, date])
+  @@index([orgId, date])
+}
+
+model WorkReportItem {
+  id            String    @id @default(cuid())
+  reportId      String
+  kind          String // DONE (today) | PLAN (next working day)
+  lineNo        Int
+  category      String
+  projectId     String?
+  description   String
+  output        String? // e.g. "120 BOQ items", "BOM 70 % done"
+  status        String    @default("DONE") // DONE | IN_PROGRESS | BLOCKED | NOT_STARTED
+  hours         Decimal?  @db.Decimal(5, 2)
+  targetDate    DateTime? @db.Date
+  carriedFromId String? // the plan item of an earlier report this continues
+
+  report  WorkReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  project Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([reportId])
 }

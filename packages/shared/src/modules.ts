@@ -8,6 +8,8 @@ export interface ModuleDef {
   path: string;
   icon: string; // lucide-react icon name
   permission: Permission | null; // null = every authenticated user
+  /** Also shown to users holding any of these permissions. */
+  anyPermission?: Permission[];
   group: string;
   description: string;
   projectScoped: boolean;
@@ -42,6 +44,7 @@ export const MODULES: ModuleDef[] = [
   m('Overview', 'approvals', 'Approvals & Workflow', '/approvals', 'BadgeCheck', null, 'Approval inbox, history and workflow rules', false),
   m('Overview', 'tasks', 'Tasks & Issues', '/tasks', 'ListTodo', 'task.view', 'My tasks, team board, calendar'),
   m('Overview', 'team', 'Team Management', '/team', 'Users', 'team.view', 'Team members, workload and responsibility matrix'),
+  { ...m('Overview', 'workreports', 'Daily Work Report', '/work-reports', 'ClipboardList', 'workreport.submit', 'Office QS / estimation team: today’s work, hours and tomorrow’s plan', false), anyPermission: ['workreport.review'] },
   m('Overview', 'notifications', 'Notifications', '/notifications', 'Bell', null, 'Alerts and preferences', false),
 
   m('Site Operations', 'manpower', 'Manpower Management', '/manpower', 'HardHat', 'manpower.view', 'Daily manpower reports, attendance, labour cost'),
@@ -96,8 +99,12 @@ export const MODULES: ModuleDef[] = [
 ];
 
 /** Compact names keep the navigation narrow; pages still show the full `label`. */
+/** Modules added after organisations were created: shown unless an administrator has hidden them. */
+export const MODULES_ADDED_LATER = ['workreports'];
+
 const NAV_LABELS: Record<string, string> = {
   approvals: 'Approvals',
+  workreports: 'Work Report',
   tasks: 'Tasks',
   team: 'Team',
   manpower: 'Manpower',
