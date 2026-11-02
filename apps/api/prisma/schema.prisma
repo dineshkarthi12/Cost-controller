@@ -367,6 +367,7 @@ model Project {
   rel_reportingPeriod_project ReportingPeriod[] @relation("ReportingPeriod_projectId")
   rel_cashFlowPlan_project CashFlowPlan[] @relation("CashFlowPlan_projectId")
   rel_boqItem_project BoqItem[] @relation("BoqItem_projectId")
+  bomItems BomItem[]
   rel_quantityTakeoff_project QuantityTakeoff[] @relation("QuantityTakeoff_projectId")
   rel_measurement_project Measurement[] @relation("Measurement_projectId")
   rel_activity_project Activity[] @relation("Activity_projectId")
@@ -698,6 +699,7 @@ model BoqItem {
   @@index([projectId, costCodeId])
 
   // generated foreign keys (scripts/add-relations.py)
+  bomItems BomItem[]
   project Project @relation("BoqItem_projectId", fields: [projectId], references: [id], onDelete: Restrict)
   wbsNode WbsNode? @relation("BoqItem_wbsNodeId", fields: [wbsNodeId], references: [id], onDelete: Restrict)
   costCode CostCode? @relation("BoqItem_costCodeId", fields: [costCodeId], references: [id], onDelete: Restrict)
@@ -3078,4 +3080,48 @@ model DailyLabourGang {
   norm2  LabourNorm?       @relation("GangNorm2", fields: [normId2], references: [id], onDelete: Restrict)
 
   @@index([reportId])
+}
+
+/// Bill of materials: the materials, labour and equipment needed for a BOQ item (estimator's take-off).
+model BomItem {
+  id          String   @id @default(cuid())
+  projectId   String
+  lineNo      Int
+  sheet       String? // source sheet, e.g. ARCH-BOM
+  section     String?
+  refCode     String // BOM item number, e.g. 10.01
+  title       String
+  boqRef      String? // BOQ item code written in the BOM, e.g. 2.05
+  boqItemId   String?
+  boqNote     String? // e.g. "BOQ Qty : 39 nos (2.05)"
+  takingQty   Decimal? @db.Decimal(18, 4)
+  takingUnit  String?
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  project Project   @relation(fields: [projectId], references: [id], onDelete: Restrict)
+  boqItem BoqItem?  @relation(fields: [boqItemId], references: [id], onDelete: SetNull)
+  lines   BomLine[]
+
+  @@index([projectId])
+}
+
+model BomLine {
+  id          String   @id @default(cuid())
+  bomItemId   String
+  lineNo      Int
+  kind        String // MATERIAL | LABOUR | EQUIPMENT | OTHER
+  description String
+  qty         Decimal  @db.Decimal(18, 4)
+  wastagePct  Decimal  @default(0) @db.Decimal(9, 4) // fraction, 0.1 = 10 %
+  totalQty    Decimal  @db.Decimal(18, 4) // qty × (1 + wastage)
+  unit        String
+  rate        Decimal? @db.Decimal(18, 4)
+  amount      Decimal? @db.Decimal(18, 2)
+  remarks     String?
+
+  bomItem BomItem @relation(fields: [bomItemId], references: [id], onDelete: Cascade)
+
+  @@index([bomItemId])
 }

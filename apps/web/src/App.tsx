@@ -20,6 +20,7 @@ import { ClientBillDetail, ClientBillingPage, ContractorBillDetail, ContractorBi
 import { AttendancePage, EquipmentUtilisation, ProgressPage, SchedulePage, VerificationQueuePage } from './features/site/SitePages';
 import { DailyLabourPage, LabourSummaryPage } from './features/site/LabourReportPages';
 import { ImportButton } from './features/admin/ImportDialog';
+import { BomPage } from './features/commercial/BomPage';
 import { AuditPage, IntegrationsPage, SettingsPage, UsersPage } from './features/admin/AdminPages';
 import { ReportsPage } from './features/reports/ReportsPage';
 import { CloseoutPage } from './features/closeout/CloseoutPage';
@@ -47,7 +48,7 @@ const MODULE_TABS: Record<string, TabDef[]> = {
   schedule: [T('Gantt & look-ahead', '/schedule', undefined, { element: <SchedulePage /> }), T('Activities', '/schedule/activities', 'activities')],
   equipment: [T('Equipment register', '/equipment', 'equipment'), T('Daily logs', '/equipment/logs', 'equipmentLogs'), T('Maintenance', '/equipment/maintenance', 'equipmentMaintenance'), T('Utilisation', '/equipment/utilisation', undefined, { element: <EquipmentUtilisation /> })],
   costcodes: [T('Cost codes', '/cost-codes', 'costCodes', { listProps: { actions: <ImportButton kind="COST_CODES" /> } }), T('WBS', '/cost-codes/wbs', 'wbsNodes')],
-  boq: [T('BOQ items', '/boq', 'boqItems', { listProps: { actions: <ImportButton kind="BOQ" /> } })],
+  boq: [T('BOQ items', '/boq', 'boqItems', { listProps: { actions: <ImportButton kind="BOQ" /> } }), T('BOM', '/boq/bom', undefined, { element: <BomPage /> })],
   takeoff: [T('Quantity takeoff', '/takeoff', 'takeoffs')],
   measurements: [T('Measurement book', '/measurements', 'measurements')],
   verification: [T('Verification queue', '/measurement-verification', undefined, { element: <VerificationQueuePage /> })],

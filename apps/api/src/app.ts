@@ -35,6 +35,7 @@ import { manpowerRouter } from './routes/manpower.js';
 import { scheduleRouter } from './routes/schedule.js';
 import { qualityRouter } from './routes/quality.js';
 import { labourRouter, projectLabourRouter } from './routes/labourReports.js';
+import { bomRouter } from './routes/bom.js';
 import { runAllJobs } from './jobs.js';
 import { assertCan } from './services/access.js';
 
@@ -99,6 +100,7 @@ export function createApp() {
   api.use('/projects/:projectId/inspections', qualityRouter);
   api.use('/projects/:projectId/labour-reports', projectLabourRouter);
   api.use('/labour-reports', labourRouter);
+  api.use('/projects/:projectId/bom', bomRouter);
   api.use('/portfolio', portfolioRouter);
   api.use('/files', filesRouter);
   api.use('/my/tasks', myTasksRouter);
