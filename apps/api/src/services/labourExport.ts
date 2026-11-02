@@ -53,6 +53,21 @@ function resultFormatting(ws: ExcelJS.Worksheet, range: string) {
   });
 }
 
+type Gang = Report['gangs'][number];
+/** Output at full precision (as Excel computes it), or null when the gang is not measured. */
+function gangPct(g: Gang): number | null {
+  const qty = num(g.doneQty);
+  if (qty === null || !g.norm) return null;
+  const m = Number(g.masons);
+  const h = Number(g.helpers);
+  const crew = g.norm.masonsPerCrew === 0 ? h : m > 0 ? m : h;
+  if (!crew) return null;
+  const q2 = num(g.doneQty2);
+  const earned = qty / num(g.norm.outputPerDay)! + (q2 !== null && g.norm2 ? q2 / num(g.norm2.outputPerDay)! : 0);
+  return earned / crew;
+}
+const weightedOf = (rep: Report) => rep.gangs.reduce((a, g) => a + (gangPct(g) === null ? 0 : num(g.labourCost)! * gangPct(g)!), 0);
+
 const RESULT_TEXT: Record<string, string> = { NOT_MEASURED: 'Not measured', PROFIT: 'PROFIT', OK: 'OK', LOSS: 'LOSS' };
 
 interface SheetInfo {
@@ -65,7 +80,7 @@ function projectSheet(wb: ExcelJS.Workbook, name: string, title: string, reports
   const ws = wb.addWorksheet(name);
   ws.columns = [
     { width: 13 }, { width: 46 }, { width: 38 }, { width: 14 }, { width: 30 }, { width: 13 }, { width: 10 }, { width: 9 }, { width: 9 }, { width: 10 }, { width: 10 }, { width: 13 }, { width: 13 }, { width: 14 },
-    ...Array.from({ length: 11 }, () => ({ width: 10, hidden: true })),
+    ...Array.from({ length: 16 }, () => ({ width: 10, hidden: true })),
   ];
   const masonRate = num(reports[0].masonRate)!;
   const helperRate = num(reports[0].helperRate)!;
@@ -87,7 +102,7 @@ function projectSheet(wb: ExcelJS.Workbook, name: string, title: string, reports
   for (const a of ['C3', 'F3']) ws.getCell(a).alignment = { horizontal: 'right' };
 
   header(ws.getRow(4));
-  ws.getRow(4).values = ['Date', 'Work', 'Workers', 'Done Qty', 'Per-Day Norm', 'Should Do Qty (norm × crew)', 'Output %', 'Mason Used', 'Helper Used', 'Mason Needed', 'Helper Needed', 'Labour Cost ₹', 'Result', 'Profit / Loss ₹', 'Qty', 'Unit', 'Norm code', 'Norm output', 'Masons / crew', 'Helpers / crew', 'Crew-days earned', 'Crew units', 'Weighted', 'Mason rate', 'Helper rate'];
+  ws.getRow(4).values = ['Date', 'Work', 'Workers', 'Done Qty', 'Per-Day Norm', 'Should Do Qty (norm × crew)', 'Output %', 'Mason Used', 'Helper Used', 'Mason Needed', 'Helper Needed', 'Labour Cost ₹', 'Result', 'Profit / Loss ₹', 'Qty', 'Unit', 'Norm code', 'Norm output', 'Masons / crew', 'Helpers / crew', 'Crew-days earned', 'Crew units', 'Weighted', 'Mason rate', 'Helper rate', 'Qty 2', 'Unit 2', 'Norm 2 output', 'Masons / crew 2', 'Helpers / crew 2'];
   header(ws.getRow(4));
 
   let r = 5;
@@ -105,12 +120,18 @@ function projectSheet(wb: ExcelJS.Workbook, name: string, title: string, reports
       const row = ws.getRow(r);
       const qty = num(g.doneQty);
       const norm = g.norm;
+      const masons = Number(g.masons);
+      const helpers = Number(g.helpers);
       const measuredInput = qty !== null && norm;
+      const qty2 = num(g.doneQty2);
+      const norm2 = g.norm2;
+      const second = measuredInput && qty2 !== null && norm2;
       const suffix = g.progress === 'DONE' ? ' – done' : g.progress === 'IN_PROGRESS' ? ' (in progress)' : '';
-      const doneText = qty !== null ? `${fmtQty(g.doneQty)} ${g.unit ?? ''}`.trim() : '-';
+      const doneText = qty !== null ? `${fmtQty(g.doneQty)}${qty2 !== null && g.unit2 && g.unit2 !== g.unit ? ` ${g.unit ?? ''}` : ''}${qty2 !== null ? ` + ${fmtQty(g.doneQty2)}` : ''} ${(qty2 !== null ? g.unit2 : g.unit) ?? ''}`.replace(/\s+/g, ' ').trim() : '-';
       // Keep the written note unless it only repeats the quantity or the status.
       const note = g.outcome && !/^\s*[\d.]+\s*[a-z.]*\s*(work\s*)?(done|completed|installed)?\.?\s*$/i.test(g.outcome) && !/^\s*(on progress|in progress|done|completed|work completed)\.?\s*$/i.test(g.outcome) ? ` – ${g.outcome}` : '';
-      const normText = norm ? `${fmtQty(norm.outputPerDay)} ${norm.unit}/day per ${norm.masonsPerCrew} Mason${norm.helpersPerCrew ? ` (+${norm.helpersPerCrew} Helper)` : ''}` : '-';
+      const normDesc = (n: NonNullable<typeof norm>) => `${fmtQty(n.outputPerDay)} ${n.unit}/day per ${n.masonsPerCrew} Mason${n.helpersPerCrew ? ` (+${n.helpersPerCrew} Helper)` : ''}`;
+      const normText = norm ? normDesc(norm) + (second ? `; ${normDesc(norm2!)}` : '') : '-';
       const cell = (col: number) => row.getCell(col);
       cell(1).value = rep.date;
       cell(1).numFmt = DATE_FMT;
@@ -118,13 +139,13 @@ function projectSheet(wb: ExcelJS.Workbook, name: string, title: string, reports
       cell(3).value = g.workers.join(', ');
       cell(4).value = doneText;
       cell(5).value = normText;
-      cell(8).value = g.masons;
-      cell(9).value = g.helpers;
+      cell(8).value = masons;
+      cell(9).value = helpers;
       for (const c of [8, 9]) {
         cell(c).font = { color: { argb: INPUT_FONT } };
         cell(c).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: INPUT_FILL } };
       }
-      // Hidden helper columns O..Y
+      // Hidden helper columns O..AD
       cell(15).value = measuredInput ? qty : null;
       cell(16).value = g.unit ?? null;
       cell(17).value = norm?.code ?? null;
@@ -133,19 +154,27 @@ function projectSheet(wb: ExcelJS.Workbook, name: string, title: string, reports
       cell(20).value = norm?.helpersPerCrew ?? null;
       cell(24).value = rm === masonRate ? { formula: '$D$3', result: rm } : rm;
       cell(25).value = rh === helperRate ? { formula: '$G$3', result: rh } : rh;
-      const pctV = num(g.outputPct);
+      if (second) {
+        cell(26).value = qty2;
+        cell(27).value = g.unit2 ?? null;
+        cell(28).value = num(norm2!.outputPerDay);
+        cell(29).value = norm2!.masonsPerCrew;
+        cell(30).value = norm2!.helpersPerCrew;
+      }
       const cost = num(g.labourCost)!;
-      const crew = !measuredInput ? null : norm!.masonsPerCrew === 0 ? g.helpers : g.masons > 0 ? g.masons : g.helpers;
-      const earned = measuredInput ? qty! / num(norm!.outputPerDay)! : null;
+      const crew = !measuredInput ? null : norm!.masonsPerCrew === 0 ? helpers : masons > 0 ? masons : helpers;
+      const earned = measuredInput ? qty! / num(norm!.outputPerDay)! + (second ? qty2! / num(norm2!.outputPerDay)! : 0) : null;
+      const pctV = earned !== null && crew ? earned / crew : null;
       const f = (formula: string, result: unknown) => ({ formula, result }) as ExcelJS.CellFormulaValue;
-      cell(21).value = f(`IF(OR(O${r}="",R${r}=""),"",O${r}/R${r})`, earned ?? '');
+      const plus2 = (mult: string) => `+IF(OR(Z${r}="",AB${r}=""),0,Z${r}/AB${r}${mult})`;
+      cell(21).value = f(`IF(OR(O${r}="",R${r}=""),"",O${r}/R${r}${plus2('')})`, earned ?? '');
       cell(22).value = f(`IF(OR(O${r}="",R${r}=""),"",IF(S${r}=0,I${r},IF(H${r}>0,H${r},I${r})))`, crew ?? '');
-      cell(6).value = f(`IF(AND(O${r}<>"",R${r}<>""),R${r}*V${r},"-")`, measuredInput ? num(norm!.outputPerDay)! * (crew ?? 0) : '-');
+      cell(6).value = f(`IF(AND(O${r}<>"",R${r}<>"",Z${r}=""),R${r}*V${r},"-")`, measuredInput && !second ? num(norm!.outputPerDay)! * (crew ?? 0) : '-');
       cell(7).value = f(`IF(OR(O${r}="",R${r}="",N(V${r})=0),"-",U${r}/V${r})`, pctV ?? '-');
-      cell(10).value = f(`IF(OR(O${r}="",R${r}=""),"-",O${r}/R${r}*S${r})`, measuredInput ? num(g.masonsNeeded) : '-');
-      cell(11).value = f(`IF(OR(O${r}="",R${r}=""),"-",O${r}/R${r}*T${r})`, measuredInput ? num(g.helpersNeeded) : '-');
+      cell(10).value = f(`IF(OR(O${r}="",R${r}=""),"-",O${r}/R${r}*S${r}${plus2(`*AC${r}`)})`, measuredInput ? num(g.masonsNeeded) : '-');
+      cell(11).value = f(`IF(OR(O${r}="",R${r}=""),"-",O${r}/R${r}*T${r}${plus2(`*AD${r}`)})`, measuredInput ? num(g.helpersNeeded) : '-');
       cell(12).value = f(`H${r}*X${r}+I${r}*Y${r}`, cost);
-      cell(14).value = f(`IF(ISNUMBER(G${r}),L${r}*(G${r}-1),0)`, num(g.profitLoss));
+      cell(14).value = f(`IF(ISNUMBER(G${r}),L${r}*(G${r}-1),0)`, pctV !== null ? cost * (pctV - 1) : 0);
       cell(13).value = f(`IF(NOT(ISNUMBER(G${r})),"Not measured",IF(ROUND(N${r},0)>0,"PROFIT",IF(ROUND(N${r},0)=0,"OK","LOSS")))`, RESULT_TEXT[g.result]);
       cell(23).value = f(`IF(ISNUMBER(G${r}),L${r}*G${r},"")`, pctV !== null ? cost * pctV : '');
       cell(6).numFmt = '0.##';
@@ -163,10 +192,10 @@ function projectSheet(wb: ExcelJS.Workbook, name: string, title: string, reports
   const lastRow = r - 1;
   const total = ws.getRow(r);
   const all = reports.flatMap((x) => x.gangs);
-  const sumOf = (k: 'masons' | 'helpers') => all.reduce((a, g) => a + g[k], 0);
+  const sumOf = (k: 'masons' | 'helpers') => all.reduce((a, g) => a + Number(g[k]), 0);
   const summaries = reports.map(reportSummary);
   const measuredCost = all.filter((g) => g.result !== 'NOT_MEASURED').reduce((a, g) => a + num(g.labourCost)!, 0);
-  const weighted = all.filter((g) => g.result !== 'NOT_MEASURED').reduce((a, g) => a + num(g.labourCost)! * num(g.outputPct)!, 0);
+  const weighted = reports.reduce((a, rep) => a + weightedOf(rep), 0);
   total.getCell(2).value = 'TOTAL';
   total.getCell(7).value = { formula: `IFERROR(SUM(W${firstRow}:W${lastRow})/SUMIFS(L${firstRow}:L${lastRow},O${firstRow}:O${lastRow},"<>"),"-")`, result: measuredCost > 0 ? weighted / measuredCost : '-' };
   total.getCell(8).value = { formula: `SUM(H${firstRow}:H${lastRow})`, result: sumOf('masons') };
@@ -232,11 +261,11 @@ export async function buildLabourWorkbook(reports: Reports, range: { from: strin
     const R = (col: string) => `${ref(sh.name)}!$${col}$${sh.firstRow}:$${col}$${sh.lastRow}`;
     const byDate = (col: string, extra = '') => `SUMIFS(${R(col)},${R('A')},$B${r}${extra})`;
     const measured = (col: string) => ['PROFIT', 'OK', 'LOSS'].map((x) => byDate(col, `,${R('M')},"${x}"`)).join('+');
-    const unit = (u: string) => byDate('O', `,${R('P')},"${u}"`);
+    const unit = (u: string) => `${byDate('O', `,${R('P')},"${u}"`)}+${byDate('Z', `,${R('AA')},"${u}"`)}`;
     const row = summary.getRow(r);
     const wd = (u: string) => Number(s.workDone[u] ?? 0);
     const measuredCost = rep.gangs.filter((g) => g.result !== 'NOT_MEASURED').reduce((a, g) => a + num(g.labourCost)!, 0);
-    const weighted = rep.gangs.filter((g) => g.result !== 'NOT_MEASURED').reduce((a, g) => a + num(g.labourCost)! * num(g.outputPct)!, 0);
+    const weighted = weightedOf(rep);
     const vals: Array<[number, ExcelJS.CellValue]> = [
       [1, rep.project.name],
       [2, rep.date],
@@ -284,7 +313,7 @@ export async function buildLabourWorkbook(reports: Reports, range: { from: strin
   ['C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L'].forEach((col, i) => sumCol(col, i + 3));
   sumCol('O', 15);
   const allMeasured = reports.flatMap((x) => x.gangs).filter((g) => g.result !== 'NOT_MEASURED');
-  const tw = allMeasured.reduce((a, g) => a + num(g.labourCost)! * num(g.outputPct)!, 0);
+  const tw = reports.reduce((a, rep) => a + weightedOf(rep), 0);
   const tc = allMeasured.reduce((a, g) => a + num(g.labourCost)!, 0);
   tot.getCell(16).value = { formula: `SUM(P${first}:P${last})`, result: tw };
   tot.getCell(17).value = { formula: `SUM(Q${first}:Q${last})`, result: tc };

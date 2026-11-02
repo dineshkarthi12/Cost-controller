@@ -3018,8 +3018,9 @@ model LabourNorm {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @default(now()) @updatedAt
 
-  org   Organisation      @relation(fields: [orgId], references: [id])
-  gangs DailyLabourGang[]
+  org    Organisation      @relation(fields: [orgId], references: [id])
+  gangs  DailyLabourGang[] @relation("GangNorm")
+  gangs2 DailyLabourGang[] @relation("GangNorm2")
 
   @@unique([orgId, code])
 }
@@ -3033,8 +3034,8 @@ model DailyLabourReport {
   masonRate   Decimal  @db.Decimal(12, 2) // ₹ per day, copied from settings when the report is created
   helperRate  Decimal  @db.Decimal(12, 2)
   remarks     String?
-  masonDays   Int      @default(0)
-  helperDays  Int      @default(0)
+  masonDays   Decimal  @default(0) @db.Decimal(8, 2)
+  helperDays  Decimal  @default(0) @db.Decimal(8, 2)
   labourCost  Decimal  @default(0) @db.Decimal(14, 2)
   outputPct   Decimal? @db.Decimal(9, 4)
   profitLoss  Decimal  @default(0) @db.Decimal(14, 2)
@@ -3054,11 +3055,15 @@ model DailyLabourGang {
   lineNo        Int
   work          String
   workers       String[]
-  masons        Int      @default(0)
-  helpers       Int      @default(0)
+  masons        Decimal  @default(0) @db.Decimal(6, 2) // 0.5 = half day
+  helpers       Decimal  @default(0) @db.Decimal(6, 2)
   normId        String?
   doneQty       Decimal? @db.Decimal(14, 4)
   unit          String?
+  /// Optional second measurement in the same gang (e.g. plastering + block wall).
+  normId2       String?
+  doneQty2      Decimal? @db.Decimal(14, 4)
+  unit2         String?
   progress      String   @default("PLANNED") // PLANNED | IN_PROGRESS | DONE
   outcome       String? // evening note as written, e.g. "70 Nos done", "20% pending"
   labourCost    Decimal  @default(0) @db.Decimal(14, 2)
@@ -3069,7 +3074,8 @@ model DailyLabourGang {
   profitLoss    Decimal  @default(0) @db.Decimal(14, 2)
 
   report DailyLabourReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  norm   LabourNorm?       @relation(fields: [normId], references: [id], onDelete: Restrict)
+  norm   LabourNorm?       @relation("GangNorm", fields: [normId], references: [id], onDelete: Restrict)
+  norm2  LabourNorm?       @relation("GangNorm2", fields: [normId2], references: [id], onDelete: Restrict)
 
   @@index([reportId])
 }

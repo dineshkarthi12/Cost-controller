@@ -283,3 +283,70 @@ describe('filling the report from an Excel file', () => {
     expect(r.body.error.message).toMatch(/Work.*Workers/);
   });
 });
+
+describe('weekly Excel in the current TOPROCK layout', () => {
+  /** Header on row 4, date banners, "Day Total" rows; hidden O qty, P unit, Q output/day, R masons, S helpers per crew, V–Z second measurement. */
+  async function weekly() {
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet(w.project.name.split(' ')[1]);
+    ws.getRow(4).values = ['Date', 'Work', 'Workers', 'Done Qty', 'Per-Day Norm', 'Should Do', 'Output %', 'Mason Used', 'Helper Used', 'Mason Needed', 'Helper Needed', 'Labour Cost ₹', 'Result', 'Profit / Loss ₹'];
+    let r = 5;
+    const days: Array<[string, Array<{ work: string; workers: string; m: number; h: number; q?: [number, string, number, number, number]; q2?: [number, string, number, number, number] }>]> = [
+      [day(-6), [
+        { work: 'Booth seating brick', workers: 'Anuj, Munna', m: 1, h: 1, q: [75, 'Nos', 600, 1, 2] },
+        { work: 'Plastering + block wall', workers: 'Ravi, Mani', m: 1, h: 1, q: [60, 'Sq.ft', 161, 1, 1], q2: [40, 'Sq.ft', 320, 1, 2] },
+        { work: 'Toilet lobby painting (till 12 pm)', workers: 'Kannan, Selva', m: 0.5, h: 0.5 },
+      ]],
+      [day(-5), [{ work: 'Brick installation', workers: 'Anuj, Munna, Arun', m: 1, h: 2, q: [110, 'Nos', 600, 1, 2] }]],
+    ];
+    for (const [d, rows] of days) {
+      ws.mergeCells(r, 1, r, 14);
+      ws.getCell(r, 1).value = `${d} banner`;
+      r++;
+      for (const g of rows) {
+        const row = ws.getRow(r++);
+        row.values = [new Date(`${d}T00:00:00Z`), g.work, g.workers, g.q ? `${g.q[0]} ${g.q[1]}` : '-', '-', '-', '-', g.m, g.h];
+        if (g.q) [15, 16, 17, 18, 19].forEach((c, i) => (row.getCell(c).value = g.q![i]));
+        if (g.q2) [22, 23, 24, 25, 26].forEach((c, i) => (row.getCell(c).value = g.q2![i]));
+      }
+      ws.getRow(r++).getCell(2).value = 'Day Total';
+    }
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+  const send = async (fields: Record<string, string>) => {
+    let req = se.post(`/api${base()}/import-excel`).set('X-Requested-With', 'toprock');
+    for (const [k, v] of Object.entries(fields)) req = req.field(k, v);
+    return req.attach('file', await weekly(), { filename: 'weekly.xlsx' });
+  };
+
+  it('lists norms missing from the master, adds them on request, then saves every day', async () => {
+    const pre = await send({ date: day(-6) });
+    expect(pre.status).toBe(200);
+    const sheet = pre.body.sheets[0];
+    expect(sheet.dates.map((d: any) => d.date)).toEqual([day(-6), day(-5)]);
+    expect(sheet.gangs).toHaveLength(3); // "Day Total" and banners skipped
+    expect(sheet.gangs[2]).toMatchObject({ masons: 0.5, helpers: 0.5 });
+    expect(sheet.gangs[1]).toMatchObject({ doneQty: 60, doneQty2: 40, unit2: 'Sq.ft' });
+    // BRICK-NOS (600 Nos, 1+2) already exists; the two plastering norms do not.
+    expect(pre.body.missingNorms.map((n: any) => n.code).sort()).toEqual(['SQFT-161-1M1H', 'SQFT-320-1M2H']);
+    expect(sheet.gangs[0].normId).toBe(norms['BRICK-NOS'].id);
+
+    // The site engineer manages manpower on the project, but norms are organisation-wide: the admin adds them.
+    const adm = request.agent(app);
+    await adm.post('/api/auth/login').set('X-Requested-With', 'toprock').send({ email: w.users.admin.email, password: PASSWORD });
+    const add = await adm.post(`/api${base()}/import-excel`).set('X-Requested-With', 'toprock').field('createMissingNorms', 'true').attach('file', await weekly(), { filename: 'weekly.xlsx' });
+    expect(add.status).toBe(200);
+    expect(add.body.missingNorms).toEqual([]);
+
+    const saved = await send({ saveAll: 'true', sheet: sheet.sheet });
+    expect(saved.status).toBe(201);
+    expect(saved.body.created).toEqual([day(-6), day(-5)]);
+    const s = await w.c.pm.ok.get(`/labour-reports/summary?from=${day(-6)}&to=${day(-6)}&projectId=${w.project.id}`);
+    // Rates are ₹1,400 / ₹1,000 here (changed earlier in this file): 2.5 × 1,400 + 2.5 × 1,000. Output is weighted over the two measured gangs.
+    expect(s.rows[0]).toMatchObject({ labourCost: '6000.00', masonDays: 2.5, helperDays: 2.5, workDone: { Nos: '75.0000', 'Sq.ft': '100.0000' } });
+    expect(Number(s.rows[0].outputPct)).toBeCloseTo((75 / 600 + 60 / 161 + 40 / 320) / 2, 4);
+
+    const again = await send({ saveAll: 'true', sheet: sheet.sheet });
+    expect(again.body).toMatchObject({ created: [], skipped: [day(-6), day(-5)] }); // existing days are left alone
+  });
+});

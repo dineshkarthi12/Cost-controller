@@ -8,14 +8,26 @@ import ExcelJS from 'exceljs';
 import { LABOUR_UNITS, defaultCrewSplit, type GangProgress } from '@toprock/shared';
 import { validationError } from '../lib/errors.js';
 
+export interface NormSpec {
+  outputPerDay: number;
+  unit: string;
+  masonsPerCrew: number;
+  helpersPerCrew: number;
+}
 export interface ImportedGang {
   work: string;
   workers: string[];
   masons: number;
   helpers: number;
   normCode: string | null;
+  /** Norm written in the file (output per day and crew), used when there is no norm code. */
+  normSpec: NormSpec | null;
   doneQty: number | null;
   unit: string | null;
+  /** Second measurement in the same gang (weekly layout columns V–Z). */
+  doneQty2: number | null;
+  unit2: string | null;
+  normSpec2: NormSpec | null;
   progress: GangProgress;
   outcome: string | null;
 }
@@ -23,6 +35,7 @@ export interface ImportedSheet {
   sheet: string;
   dates: string[];
   rows: Array<ImportedGang & { date: string | null }>;
+  notes: string[];
 }
 
 const HEADERS: Record<string, string[]> = {
@@ -36,6 +49,7 @@ const HEADERS: Record<string, string[]> = {
   masons: ['mason used', 'masons', 'mason'],
   helpers: ['helper used', 'helpers', 'helper'],
   note: ['note', 'remarks', 'status', 'outcome'],
+  normText: ['per-day norm', 'norm per day'],
 };
 
 function text(v: ExcelJS.CellValue): string {
@@ -86,8 +100,17 @@ function parseDone(s: string): { qty: number | null; unit: string | null } {
   const rest = m[2].split(/\s+(?:done|work|installed|completed)\b|\s*[(×]/i)[0].trim();
   return { qty: Number(m[1]), unit: normaliseUnit(rest) ?? normaliseUnit(rest.split(/\s+/)[0]) };
 }
+/** "600 Nos/day per 1 Mason (+2 Helper)" → norm spec. */
+export function parseNormText(s: string): NormSpec | null {
+  const m = s.match(/(\d+(?:\.\d+)?)\s*([a-z.²]+)\s*\/\s*day\s*per\s*(\d+)\s*mason(?:s)?(?:\s*\(\+\s*(\d+)\s*helpers?\))?/i);
+  if (!m) return null;
+  const unit = normaliseUnit(m[2]);
+  return unit ? { outputPerDay: Number(m[1]), unit, masonsPerCrew: Number(m[3]), helpersPerCrew: Number(m[4] ?? 0) } : null;
+}
+
 function progressOf(work: string, note: string, hasQty: boolean): GangProgress {
   const all = `${work} ${note}`.toLowerCase();
+  if (/\b100\s*%/.test(all) && !/pending/.test(all)) return 'DONE';
   if (/in progress|on progress|pending|\d+\s*%/.test(all)) return 'IN_PROGRESS';
   if (/\bdone\b|completed?|installed/.test(all) || hasQty) return 'DONE';
   return 'PLANNED';
@@ -117,15 +140,19 @@ export async function readLabourWorkbook(buf: Buffer): Promise<ImportedSheet[]> 
       }
     }
     if (!headerRow) continue;
-    // TOPROCK's workbook keeps the quantity, unit and norm code in columns O, P and Q without headers.
-    if (!col.qty && !text(ws.getRow(headerRow).getCell(15).value)) Object.assign(col, { qty: 15, unit: col.unit ?? 16, code: col.code ?? 17 });
+    // TOPROCK's workbook keeps the measurement in hidden columns without headers: O quantity, P unit, then
+    // either Q norm code (older layout) or Q output per day, R masons, S helpers per crew (current layout).
+    // The weekly layout adds a second quantity in V (unit W).
+    const hiddenLayout = !col.qty && !text(ws.getRow(headerRow).getCell(15).value);
+    if (hiddenLayout) Object.assign(col, { qty: 15, unit: col.unit ?? 16 });
+    const notes: string[] = [];
     const rows: ImportedSheet['rows'] = [];
     for (let r = headerRow + 1; r <= ws.rowCount; r++) {
       const row = ws.getRow(r);
       const get = (k: string) => (col[k] ? row.getCell(col[k]).value : null);
       const workRaw = text(get('work'));
       // Skip blanks, totals and the merged date banner rows the workbook puts above each day.
-      if (!workRaw || /^total$/i.test(workRaw) || row.getCell(col.work).isMerged) continue;
+      if (!workRaw || /^(day\s+|grand\s+|week\s+)?total$/i.test(workRaw) || row.getCell(col.work).isMerged) continue;
       const workers = text(get('workers')).split(/[,\n]+/).map((s) => s.trim()).filter(Boolean);
       const doneText = text(get('done'));
       const note = text(get('note'));
@@ -139,7 +166,34 @@ export async function readLabourWorkbook(buf: Buffer): Promise<ImportedSheet[]> 
       if (qty !== null && !unit && doneText) unit = parseDone(doneText).unit;
       const m = numberOf(get('masons'));
       const h = numberOf(get('helpers'));
-      const crew = m === null && h === null ? defaultCrewSplit(workers.length) : { masons: Math.max(0, Math.round(m ?? 0)), helpers: Math.max(0, Math.round(h ?? 0)) };
+      const half = (x: number | null) => Math.max(0, Math.round((x ?? 0) * 2) / 2); // half days allowed
+      const crew = m === null && h === null ? defaultCrewSplit(workers.length) : { masons: half(m), helpers: half(h) };
+      // Norm: a code, the hidden output/crew columns, or the "Per-Day Norm" text.
+      let normCode = col.code ? text(get('code')) || null : null;
+      let normSpec: NormSpec | null = null;
+      if (hiddenLayout) {
+        const q = row.getCell(17).value;
+        const qn = numberOf(q);
+        if (qn === null && text(q)) normCode = normCode ?? text(q);
+        else if (qn !== null && qn > 0 && unit) normSpec = { outputPerDay: qn, unit, masonsPerCrew: Math.round(numberOf(row.getCell(18).value) ?? 1), helpersPerCrew: Math.round(numberOf(row.getCell(19).value) ?? 0) };
+      }
+      if (!normCode && !normSpec && qty !== null && col.normText) {
+        const spec = parseNormText(text(get('normText')));
+        if (spec && (!unit || spec.unit === unit)) normSpec = spec;
+      }
+      if (normCode && /^-?\d+(\.\d+)?$/.test(normCode)) normCode = null;
+      let doneQty2: number | null = null;
+      let unit2: string | null = null;
+      let normSpec2: NormSpec | null = null;
+      if (hiddenLayout && qty !== null) {
+        doneQty2 = numberOf(row.getCell(22).value);
+        if (doneQty2 !== null) {
+          unit2 = normaliseUnit(text(row.getCell(23).value)) ?? unit;
+          const out2 = numberOf(row.getCell(24).value);
+          if (out2 && unit2) normSpec2 = { outputPerDay: out2, unit: unit2, masonsPerCrew: Math.round(numberOf(row.getCell(25).value) ?? 1), helpersPerCrew: Math.round(numberOf(row.getCell(26).value) ?? 0) };
+          else notes.push(`Row ${r}: second quantity ${doneQty2} ${unit2 ?? ''} has no norm, so it is not measured`);
+        }
+      }
       // "Work – done – note" (this app's export) or "Work – note" (written by hand): split the note off.
       const dash = workRaw.indexOf(' – ');
       const tail = dash >= 0 ? workRaw.slice(dash + 3).replace(/^(done|completed)(\s+–\s+)?/i, '').trim() : '';
@@ -151,14 +205,18 @@ export async function readLabourWorkbook(buf: Buffer): Promise<ImportedSheet[]> 
         workers: workers.slice(0, 60).map((w) => w.slice(0, 80)),
         masons: crew.masons,
         helpers: crew.helpers,
-        normCode: text(get('code')) || null,
+        normCode,
+        normSpec,
         doneQty: qty,
         unit,
+        doneQty2,
+        unit2,
+        normSpec2,
         progress: progressOf(workRaw, note, qty !== null),
         outcome: outcome ? outcome.slice(0, 300) : null,
       });
     }
-    if (rows.length) out.push({ sheet: ws.name, dates: [...new Set(rows.map((x) => x.date).filter((d): d is string => !!d))].sort(), rows });
+    if (rows.length) out.push({ sheet: ws.name, dates: [...new Set(rows.map((x) => x.date).filter((d): d is string => !!d))].sort(), rows, notes });
   }
   if (!out.length) throw validationError('No labour rows found. The sheet needs a header row with “Work” and “Workers” columns – download the template to see the format.');
   return out;

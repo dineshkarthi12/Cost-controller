@@ -24,12 +24,16 @@ interface Gang {
   lineNo: number;
   work: string;
   workers: string[];
-  masons: number;
-  helpers: number;
+  masons: number | string;
+  helpers: number | string;
   normId: string | null;
   norm: NormInfo | null;
   doneQty: string | null;
   unit: string | null;
+  normId2: string | null;
+  norm2: NormInfo | null;
+  doneQty2: string | null;
+  unit2: string | null;
   progress: GangProgress;
   outcome: string | null;
   labourCost: string;
@@ -81,6 +85,11 @@ interface Draft {
   norm: NormInfo | null;
   doneQty: string;
   unit: string;
+  showSecond: boolean;
+  normId2: string | null;
+  norm2: NormInfo | null;
+  doneQty2: string;
+  unit2: string;
   progress: GangProgress;
   outcome: string;
 }
@@ -97,14 +106,15 @@ const plText = (v: string | number) => {
 };
 const plTone = (v: string | number) => (Number(v) > 0.5 ? 'text-emerald-700' : Number(v) < -0.5 ? 'text-red-600' : 'text-ink');
 const splitNames = (t: string) => t.split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
+const doneText = (g: Gang) => `${Number(g.doneQty)} ${g.unit ?? ''}${g.doneQty2 ? ` + ${Number(g.doneQty2)} ${g.unit2 ?? ''}` : ''}`.trim();
 let keySeq = 0;
 const newKey = () => `g${++keySeq}`;
 
 function emptyDraft(): Draft {
-  return { key: newKey(), work: '', workersText: '', masons: '0', helpers: '0', crewTouched: false, normId: null, norm: null, doneQty: '', unit: '', progress: 'PLANNED', outcome: '' };
+  return { key: newKey(), work: '', workersText: '', masons: '0', helpers: '0', crewTouched: false, normId: null, norm: null, doneQty: '', unit: '', showSecond: false, normId2: null, norm2: null, doneQty2: '', unit2: '', progress: 'PLANNED', outcome: '' };
 }
 function fromGang(g: Gang): Draft {
-  return { key: newKey(), work: g.work, workersText: g.workers.join(', '), masons: String(g.masons), helpers: String(g.helpers), crewTouched: true, normId: g.normId, norm: g.norm, doneQty: g.doneQty ? String(Number(g.doneQty)) : '', unit: g.unit ?? '', progress: g.progress, outcome: g.outcome ?? '' };
+  return { key: newKey(), work: g.work, workersText: g.workers.join(', '), masons: String(Number(g.masons)), helpers: String(Number(g.helpers)), crewTouched: true, normId: g.normId, norm: g.norm, doneQty: g.doneQty ? String(Number(g.doneQty)) : '', unit: g.unit ?? '', showSecond: !!(g.doneQty2 || g.normId2), normId2: g.normId2, norm2: g.norm2, doneQty2: g.doneQty2 ? String(Number(g.doneQty2)) : '', unit2: g.unit2 ?? '', progress: g.progress, outcome: g.outcome ?? '' };
 }
 function withNames(d: Draft, workersText: string): Draft {
   if (d.crewTouched) return { ...d, workersText };
@@ -112,7 +122,7 @@ function withNames(d: Draft, workersText: string): Draft {
   return { ...d, workersText, masons: String(crew.masons), helpers: String(crew.helpers) };
 }
 const draftCalc = (d: Draft, rates: { masonRate: string; helperRate: string }) =>
-  gangProductivity({ masons: Number(d.masons) || 0, helpers: Number(d.helpers) || 0, doneQty: d.doneQty || null, norm: d.norm }, rates);
+  gangProductivity({ masons: Number(d.masons) || 0, helpers: Number(d.helpers) || 0, doneQty: d.doneQty || null, norm: d.norm, second: d.showSecond ? { doneQty: d.doneQty2 || null, norm: d.norm2, unit: d.unit2 } : null }, rates);
 
 /** Fills evening results into the morning gangs, matching by shared worker names, then by order. */
 function mergeEvening(drafts: Draft[], ex: Extracted): Draft[] {
@@ -240,37 +250,63 @@ function PhotoButton({ aiConfigured, reader, label }: { aiConfigured: boolean; r
 
 interface ExcelSheet {
   sheet: string;
-  dates: string[];
+  dates: Array<{ date: string; rows: number; existing: boolean }>;
   matchesProject: boolean;
-  gangs: Array<{ work: string; workers: string[]; masons: number; helpers: number; normId: string | null; norm: NormInfo | null; doneQty: number | null; unit: string | null; progress: GangProgress; outcome: string | null }>;
+  gangs: Array<{ work: string; workers: string[]; masons: number; helpers: number; normId: string | null; norm: NormInfo | null; doneQty: number | null; unit: string | null; normId2: string | null; norm2: NormInfo | null; doneQty2: number | null; unit2: string | null; progress: GangProgress; outcome: string | null }>;
   warnings: string[];
+}
+interface MissingNorm {
+  code: string;
+  name: string;
+  unit: string;
+  outputPerDay: number;
+  masonsPerCrew: number;
+  helpersPerCrew: number;
+}
+interface ExcelResult {
+  sheets: ExcelSheet[];
+  preferred: string | null;
+  missingNorms: MissingNorm[];
+  canAddNorms: boolean;
 }
 
 function useExcelReader(projectId: string, date: string, onRead: (drafts: Draft[], stage: 'morning' | 'evening', notes: string[]) => void) {
   const input = useRef<HTMLInputElement>(null);
-  const [choose, setChoose] = useState<ExcelSheet[] | null>(null);
+  const qc = useQueryClient();
+  const [file, setFile] = useState<File | null>(null);
+  const [result, setResult] = useState<ExcelResult | null>(null);
   const use = (sh: ExcelSheet) => {
-    setChoose(null);
+    setResult(null);
     if (!sh.gangs.length) return toast.error(sh.warnings[0] ?? 'No rows found for this date');
-    const drafts = sh.gangs.map((g) => ({ ...emptyDraft(), work: g.work, workersText: g.workers.join(', '), masons: String(g.masons), helpers: String(g.helpers), crewTouched: true, normId: g.normId, norm: g.norm, doneQty: g.doneQty !== null ? String(g.doneQty) : '', unit: g.unit ?? '', progress: g.progress, outcome: g.outcome ?? '' }));
+    const drafts = sh.gangs.map((g) => ({ ...emptyDraft(), work: g.work, workersText: g.workers.join(', '), masons: String(g.masons), helpers: String(g.helpers), crewTouched: true, normId: g.normId, norm: g.norm, doneQty: g.doneQty !== null ? String(g.doneQty) : '', unit: g.unit ?? '', showSecond: g.doneQty2 !== null, normId2: g.normId2, norm2: g.norm2, doneQty2: g.doneQty2 !== null ? String(g.doneQty2) : '', unit2: g.unit2 ?? '', progress: g.progress, outcome: g.outcome ?? '' }));
     const measured = sh.gangs.some((g) => g.doneQty !== null || g.progress !== 'PLANNED');
     toast.success(`Filled ${drafts.length} rows from “${sh.sheet}”. Check them before saving.`);
     onRead(drafts, measured ? 'evening' : 'morning', sh.warnings);
   };
+  const send = (f: File, extra: Record<string, string> = {}) => {
+    const form = new FormData();
+    form.append('date', date);
+    for (const [k, v] of Object.entries(extra)) form.append(k, v);
+    form.append('file', f);
+    return api.upload<ExcelResult & { created?: string[]; skipped?: string[] }>(`/projects/${projectId}/labour-reports/import-excel`, form);
+  };
   const m = useMutation({
-    mutationFn: (file: File) => {
-      const f = new FormData();
-      f.append('date', date);
-      f.append('file', file);
-      return api.upload<{ sheets: ExcelSheet[]; preferred: string | null }>(`/projects/${projectId}/labour-reports/import-excel`, f);
-    },
-    onSuccess: (r) => {
+    mutationFn: ({ f, extra }: { f: File; extra?: Record<string, string> }) => send(f, extra),
+    onSuccess: (r, v) => {
+      if (v.extra?.saveAll) {
+        toast.success(`${r.created?.length ?? 0} day(s) saved${r.skipped?.length ? `; ${r.skipped.length} day(s) already had a report and were left as they were` : ''}`);
+        setResult(null);
+        void qc.invalidateQueries({ queryKey: ['p'] });
+        return;
+      }
       const pref = r.sheets.find((x) => x.sheet === r.preferred);
-      if (pref) use(pref);
-      else setChoose(r.sheets);
+      // Fill straight away when there is nothing to decide: one sheet for this site, one day, all norms known.
+      if (pref && pref.dates.length <= 1 && !r.missingNorms.length) use(pref);
+      else setResult(r);
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const ordered = result ? [...result.sheets].sort((a, b) => Number(b.sheet === result.preferred) - Number(a.sheet === result.preferred)) : [];
   const ui = (
     <>
       <input
@@ -282,21 +318,55 @@ function useExcelReader(projectId: string, date: string, onRead: (drafts: Draft[
         onChange={(e) => {
           const f = e.target.files?.[0];
           e.target.value = '';
-          if (f) m.mutate(f);
+          if (f) {
+            setFile(f);
+            m.mutate({ f });
+          }
         }}
       />
-      {choose && (
-        <Dialog open onOpenChange={(o) => !o && setChoose(null)} title="Which sheet is this project?" description="The file has more than one sheet. Choose the one for this site.">
-          <ul className="space-y-2">
-            {choose.map((sh) => (
-              <li key={sh.sheet}>
-                <Button variant="outline" className="w-full justify-between" disabled={!sh.gangs.length} onClick={() => use(sh)}>
-                  <span>{sh.sheet}</span>
-                  <span className="text-xs text-muted">{sh.gangs.length ? `${sh.gangs.length} rows` : 'no rows for this date'}</span>
-                </Button>
-              </li>
-            ))}
-          </ul>
+      {result && file && (
+        <Dialog open onOpenChange={(o) => !o && setResult(null)} size="lg" title="Use the Excel file" description="Choose the sheet for this site. A weekly file can be saved for all its days at once.">
+          <div className="space-y-4">
+            {!!result.missingNorms.length && (
+              <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                <p className="font-medium">{result.missingNorms.length} per-day norm(s) in the file are not in Labour norms yet:</p>
+                <ul className="mt-1 list-disc pl-5 text-xs">
+                  {result.missingNorms.map((n) => <li key={n.code}>{n.outputPerDay} {n.unit}/day for {n.masonsPerCrew} mason + {n.helpersPerCrew} helper (e.g. “{n.name}”)</li>)}
+                </ul>
+                <p className="mt-1 text-xs">Without them that work is saved but not measured.</p>
+                {result.canAddNorms && (
+                  <Button size="sm" className="mt-2" loading={m.isPending} onClick={() => m.mutate({ f: file, extra: { createMissingNorms: 'true' } })}>
+                    Add these norms and continue
+                  </Button>
+                )}
+              </div>
+            )}
+            <ul className="space-y-3">
+              {ordered.map((sh) => {
+                const days = sh.dates.length;
+                const newDays = sh.dates.filter((d) => !d.existing).length;
+                return (
+                  <li key={sh.sheet} className={cx('rounded-lg border p-3', sh.sheet === result.preferred ? 'border-brand-300 bg-brand-50/40' : 'border-line')}>
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="font-medium">{sh.sheet}{sh.sheet === result.preferred && <span className="ml-2 text-xs font-normal text-muted">matches this project</span>}</p>
+                      <span className="text-xs text-muted">{days > 1 ? `${days} days: ${sh.dates.map((d) => formatDate(d.date, { day: '2-digit', month: 'short' })).join(', ')}` : `${sh.gangs.length} rows`}</span>
+                    </div>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <Button size="sm" variant="outline" disabled={!sh.gangs.length} onClick={() => use(sh)}>
+                        {sh.gangs.length ? `Fill ${formatDate(date, { day: '2-digit', month: 'short' })} (${sh.gangs.length} rows)` : `No rows for ${formatDate(date, { day: '2-digit', month: 'short' })}`}
+                      </Button>
+                      {days > 1 && (
+                        <Button size="sm" disabled={!newDays} loading={m.isPending} onClick={() => m.mutate({ f: file, extra: { saveAll: 'true', sheet: sh.sheet } })}>
+                          {newDays ? `Save all ${newDays} day(s)` : 'All days already saved'}
+                        </Button>
+                      )}
+                    </div>
+                    {days > 1 && newDays < days && <p className="mt-1 text-xs text-muted">{days - newDays} day(s) already have a report and will be left as they are.</p>}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
         </Dialog>
       )}
     </>
@@ -401,7 +471,7 @@ function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted
               <p className="mt-1 text-sm text-muted">{g.workers.join(', ') || '—'}</p>
               <p className="mt-1 text-sm">{g.masons} mason · {g.helpers} helper · {formatMoney(g.labourCost)}</p>
               <p className="mt-1 text-sm">
-                Done: <strong>{g.doneQty ? `${Number(g.doneQty)} ${g.unit ?? ''}` : (g.outcome || PROGRESS_LABEL[g.progress])}</strong>
+                Done: <strong>{g.doneQty ? doneText(g) : (g.outcome || PROGRESS_LABEL[g.progress])}</strong>
                 {g.outputPct !== null && <> · {pctText(g.outputPct)} · <span className={plTone(g.profitLoss)}>{plText(g.profitLoss)}</span></>}
               </p>
             </div>
@@ -422,7 +492,7 @@ function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted
                   <td className="max-w-56 px-3 py-2 text-muted">{g.workers.join(', ')}</td>
                   <td className="px-3 py-2 text-center">{g.masons}</td>
                   <td className="px-3 py-2 text-center">{g.helpers}</td>
-                  <td className="px-3 py-2 whitespace-nowrap">{g.doneQty ? `${Number(g.doneQty)} ${g.unit ?? ''}` : '—'}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">{g.doneQty ? doneText(g) : '—'}</td>
                   <td className="px-3 py-2 text-xs text-muted">{g.norm ? `${Number(g.norm.outputPerDay)} ${g.norm.unit} · ${g.norm.masonsPerCrew}M+${g.norm.helpersPerCrew}H` : '—'}</td>
                   <td className="px-3 py-2 text-right">{pctText(g.outputPct)}</td>
                   <td className="px-3 py-2 text-right whitespace-nowrap">{formatMoney(g.labourCost)}</td>
@@ -456,13 +526,13 @@ function ReportEditor({ projectId, date, report, stage, initial, photo, notes, f
   const names = useQuery({ queryKey: ['p', 'dlr-names', projectId], queryFn: () => api.get<string[]>(`/projects/${projectId}/labour-reports/worker-names`) });
   const set = (key: string, patch: Partial<Draft> | ((d: Draft) => Draft)) => setDrafts((all) => all.map((d) => (d.key === key ? (typeof patch === 'function' ? patch(d) : { ...d, ...patch }) : d)));
   const calcs = drafts.map((d) => draftCalc(d, rates));
-  const totals = summariseProductivity(drafts.map((d, i) => ({ masons: Number(d.masons) || 0, helpers: Number(d.helpers) || 0, doneQty: d.doneQty || null, norm: d.norm, unit: d.unit || d.norm?.unit, productivity: calcs[i] })));
+  const totals = summariseProductivity(drafts.map((d, i) => ({ masons: Number(d.masons) || 0, helpers: Number(d.helpers) || 0, doneQty: d.doneQty || null, norm: d.norm, unit: d.unit || d.norm?.unit, second: d.showSecond ? { doneQty: d.doneQty2 || null, norm: d.norm2, unit: d.unit2 || d.norm2?.unit } : null, productivity: calcs[i] })));
 
   const save = useMutation({
     mutationFn: async () => {
       const gangs = drafts
         .filter((d) => d.work.trim() || d.workersText.trim())
-        .map((d) => ({ work: d.work.trim() || 'Work', workers: splitNames(d.workersText), masons: Number(d.masons) || 0, helpers: Number(d.helpers) || 0, normId: d.normId, doneQty: d.doneQty.trim() || null, unit: d.unit || null, progress: d.progress, outcome: d.outcome.trim() || null }));
+        .map((d) => ({ work: d.work.trim() || 'Work', workers: splitNames(d.workersText), masons: Number(d.masons) || 0, helpers: Number(d.helpers) || 0, normId: d.normId, doneQty: d.doneQty.trim() || null, unit: d.unit || null, normId2: d.showSecond ? d.normId2 : null, doneQty2: d.showSecond ? d.doneQty2.trim() || null : null, unit2: d.showSecond ? d.unit2 || null : null, progress: d.progress, outcome: d.outcome.trim() || null }));
       if (!gangs.length) throw new Error('Add at least one work row');
       const body = { gangs, remarks: remarks.trim() || null, ...(evening ? { status: 'COMPLETED' } : {}) };
       const saved = report ? await api.put<Report>(`/projects/${projectId}/labour-reports/${report.id}`, { ...body, expectedUpdatedAt: report.updatedAt }) : await api.post<Report>(`/projects/${projectId}/labour-reports`, { ...body, date });
@@ -528,10 +598,10 @@ function ReportEditor({ projectId, date, report, stage, initial, photo, notes, f
                 <Input id={`${d.key}-work`} value={d.work} placeholder="e.g. Glue filling work" onChange={(e) => set(d.key, { work: e.target.value })} />
               </Field>
               <Field label="Masons" htmlFor={`${d.key}-m`}>
-                <Input id={`${d.key}-m`} inputMode="numeric" value={d.masons} onChange={(e) => set(d.key, { masons: e.target.value.replace(/\D/g, ''), crewTouched: true })} />
+                <Input id={`${d.key}-m`} inputMode="decimal" value={d.masons} onChange={(e) => set(d.key, { masons: e.target.value.replace(/[^\d.]/g, ''), crewTouched: true })} />
               </Field>
               <Field label="Helpers" htmlFor={`${d.key}-h`}>
-                <Input id={`${d.key}-h`} inputMode="numeric" value={d.helpers} onChange={(e) => set(d.key, { helpers: e.target.value.replace(/\D/g, ''), crewTouched: true })} />
+                <Input id={`${d.key}-h`} inputMode="decimal" value={d.helpers} onChange={(e) => set(d.key, { helpers: e.target.value.replace(/[^\d.]/g, ''), crewTouched: true })} />
               </Field>
               <Field label="Workers" htmlFor={`${d.key}-w`} help="Separate names with commas" className="sm:col-span-6">
                 <Textarea id={`${d.key}-w`} rows={2} value={d.workersText} placeholder="Anuj, Munna" onChange={(e) => set(d.key, (x) => withNames(x, e.target.value))} />
@@ -554,6 +624,34 @@ function ReportEditor({ projectId, date, report, stage, initial, photo, notes, f
                   <Field label="Unit" htmlFor={`${d.key}-u`}>
                     <Select id={`${d.key}-u`} options={['', ...LABOUR_UNITS].map((u) => ({ value: u, label: u || '—' }))} value={d.unit} onChange={(e) => set(d.key, { unit: e.target.value })} />
                   </Field>
+                  {d.showSecond ? (
+                    <>
+                      <Field label="Second norm (same gang)" className="sm:col-span-3">
+                        <RefSelect
+                          source="labourNorms"
+                          label="Second norm"
+                          value={d.normId2}
+                          initialLabel={d.norm2 ? `${d.norm2.name} — ${Number(d.norm2.outputPerDay)} ${d.norm2.unit}/day` : null}
+                          onChange={(v, o?: RefOption) => set(d.key, { normId2: v, norm2: v && o?.extra ? { id: v, code: String(o.extra.code), name: o.label.replace(/ — .*$/, ''), unit: String(o.extra.unit), outputPerDay: String(o.extra.outputPerDay), masonsPerCrew: Number(o.extra.masonsPerCrew), helpersPerCrew: Number(o.extra.helpersPerCrew) } : null, unit2: v && o?.extra?.unit ? String(o.extra.unit) : d.unit2 })}
+                        />
+                      </Field>
+                      <Field label="Second qty" htmlFor={`${d.key}-q2`}>
+                        <Input id={`${d.key}-q2`} inputMode="decimal" value={d.doneQty2} onChange={(e) => set(d.key, { doneQty2: e.target.value.replace(/[^\d.]/g, '') })} />
+                      </Field>
+                      <Field label="Unit" htmlFor={`${d.key}-u2`}>
+                        <Select id={`${d.key}-u2`} options={['', ...LABOUR_UNITS].map((u) => ({ value: u, label: u || '—' }))} value={d.unit2} onChange={(e) => set(d.key, { unit2: e.target.value })} />
+                      </Field>
+                      <div className="flex items-end">
+                        <Button size="sm" variant="ghost" onClick={() => set(d.key, { showSecond: false, normId2: null, norm2: null, doneQty2: '', unit2: '' })}>Remove second</Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="flex items-end sm:col-span-6">
+                      <Button size="sm" variant="ghost" icon={<Plus className="h-4 w-4" />} onClick={() => set(d.key, { showSecond: true })}>
+                        Second measurement (same gang did two kinds of work)
+                      </Button>
+                    </div>
+                  )}
                   <Field label="Status" htmlFor={`${d.key}-p`}>
                     <Select id={`${d.key}-p`} options={GANG_PROGRESS.map((p) => ({ value: p, label: PROGRESS_LABEL[p] }))} value={d.progress} onChange={(e) => set(d.key, { progress: e.target.value as GangProgress })} />
                   </Field>

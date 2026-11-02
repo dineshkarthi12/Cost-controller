@@ -15,7 +15,7 @@ const day = (gangs: Array<GangInput & { unit?: string }>) => summariseProductivi
 describe('labour productivity (matches the TOPROCK workbook)', () => {
   it('aluminium frame: 125 Rft by 1 mason + 3 helpers is 125 % and a ₹1,075 profit', () => {
     const p = gangProductivity({ masons: 1, helpers: 3, doneQty: 125, norm: RFT }, rates);
-    expect(p).toEqual({ labourCost: '4300.00', measured: true, outputPct: '1.2500', shouldDoQty: '100.0000', masonsNeeded: '1.2500', helpersNeeded: '1.2500', result: 'PROFIT', profitLoss: '1075.00' });
+    expect(p).toMatchObject({ labourCost: '4300.00', measured: true, outputPct: '1.2500', shouldDoQty: '100.0000', masonsNeeded: '1.2500', helpersNeeded: '1.2500', result: 'PROFIT', profitLoss: '1075.00' });
   });
 
   it('brick 70 Nos against 600 Nos/day is a loss; helpers needed follows the crew mix', () => {
@@ -78,6 +78,27 @@ describe('labour productivity (matches the TOPROCK workbook)', () => {
     expect(s.helpersNeeded).toBe('1.7500');
     expect(s.result).toBe('LOSS');
     expect(s.profitLoss).toBe('-6066.67');
+  });
+
+  it('weekly workbook, Ponram 27 Oct: half days and a gang with two measurements', () => {
+    const s = day([
+      { masons: 1, helpers: 1, doneQty: 75, norm: BRICK, unit: 'Nos' },
+      { masons: 1, helpers: 1, doneQty: 60, norm: n(161, 1, 1, 'Sq.ft'), unit: 'Sq.ft', second: { doneQty: 40, norm: n(320, 1, 2, 'Sq.ft'), unit: 'Sq.ft' } },
+      { masons: 1, helpers: 1 },
+      { masons: 1, helpers: 1 },
+      { masons: 1, helpers: 0 },
+      { masons: 0.5, helpers: 0.5 },
+      { masons: 1, helpers: 0.5 },
+      { masons: 1, helpers: 1 },
+      { masons: 3, helpers: 4 },
+      { masons: 0, helpers: 0 },
+    ]);
+    expect(s.labourCost).toBe('23650.00');
+    expect(s.outputPct).toBe('0.3113');
+    expect(s.profitLoss).toBe('-3167.86');
+    expect(s.workDone).toEqual({ Nos: '75.0000', 'Sq.ft': '100.0000' });
+    expect(s.masonDays).toBe(10.5);
+    expect(s.helperDays).toBe(10);
   });
 
   it('defaults to one mason and the rest helpers', () => {

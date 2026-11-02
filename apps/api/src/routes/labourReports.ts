@@ -3,14 +3,14 @@ import multer from 'multer';
 import { z } from 'zod';
 import { prisma, transaction } from '../lib/prisma.js';
 import { param, parseBody } from '../lib/http.js';
-import { conflict, notFound, validationError } from '../lib/errors.js';
+import { conflict, forbidden, notFound, validationError } from '../lib/errors.js';
 import { isoDate, toDateOnly } from '../lib/dates.js';
 import { ctxOf } from '../middleware/auth.js';
 import { accessibleProjectIds, assertCan, assertProjectAccess, can } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { assertReportDate, createReportSchema, currentRates, loadReport, parseRange, prepareGangs, reportBodySchema, reportsInRange, reportSummary } from '../services/labourReports.js';
 import { buildLabourWorkbook } from '../services/labourExport.js';
-import { labourTemplate, readLabourWorkbook } from '../services/labourExcelImport.js';
+import { labourTemplate, readLabourWorkbook, type ImportedGang, type ImportedSheet } from '../services/labourExcelImport.js';
 import { extractLabourSheet, labourSheetAiConfigured, MAX_SHEET_IMAGE_BYTES, SHEET_IMAGE_TYPES, type SheetImageType } from '../services/labourSheetAi.js';
 
 /** /projects/:projectId/labour-reports */
@@ -73,28 +73,96 @@ projectLabourRouter.post('/import-excel', xlsxUpload.single('file'), async (req,
   const projectId = param(req, 'projectId');
   assertCan(ctx, 'manpower.manage', projectId);
   if (!req.file) throw validationError('Choose an Excel file');
-  const date = typeof req.body?.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.body.date) ? req.body.date : isoDate(new Date())!;
+  const opts = parseBody(
+    z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(), createMissingNorms: z.enum(['true', 'false']).optional(), saveAll: z.enum(['true', 'false']).optional(), sheet: z.string().max(100).optional() }),
+    req.body ?? {},
+  );
+  const date = opts.date ?? isoDate(new Date())!;
   const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { name: true, code: true } });
   const sheets = await readLabourWorkbook(req.file.buffer);
-  const norms = new Map((await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId } })).map((n) => [n.code.toUpperCase(), n]));
+
+  // Norms: by code, or by the output/crew written in the file. Missing ones can be added in one go.
+  let norms = await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId } });
+  const unitCode = (u: string) => u.replace(/[^a-z]/gi, '').toUpperCase();
+  const specKey = (x: { unit: string; outputPerDay: unknown; masonsPerCrew: number; helpersPerCrew: number }) => `${x.unit}|${Number(x.outputPerDay)}|${x.masonsPerCrew}|${x.helpersPerCrew}`;
+  const missing = new Map<string, { code: string; name: string; unit: string; outputPerDay: number; masonsPerCrew: number; helpersPerCrew: number }>();
+  for (const r of sheets.flatMap((sh) => sh.rows)) {
+    for (const spec of [r.normCode ? null : r.normSpec, r.normSpec2]) {
+      if (!spec || norms.some((n) => specKey(n) === specKey(spec))) continue;
+      const k = specKey(spec);
+      if (!missing.has(k)) missing.set(k, { code: `${unitCode(spec.unit)}-${spec.outputPerDay}-${spec.masonsPerCrew}M${spec.helpersPerCrew}H`.slice(0, 30), name: r.work.slice(0, 120), ...spec });
+    }
+  }
+  if (opts.createMissingNorms === 'true' && missing.size) {
+    if (!can(ctx, 'manpower.manage', null)) throw forbidden('Only users who manage labour norms for the organisation can add norms');
+    await transaction(async (tx) => {
+      for (const m of missing.values()) {
+        const code = norms.some((n) => n.code === m.code) ? `${m.code}-${Date.now().toString(36).slice(-3)}` : m.code;
+        await tx.labourNorm.create({ data: { ...m, code, outputPerDay: String(m.outputPerDay), orgId: ctx.orgId, createdById: ctx.user.id, notes: `Added from the labour sheet ${req.file!.originalname}` } });
+      }
+      await audit(tx, ctx, { action: 'CREATE', entityType: 'labourNorm', entityId: null, projectId, summary: `${missing.size} labour norm(s) added from ${req.file!.originalname}` });
+    });
+    norms = await prisma.labourNorm.findMany({ where: { orgId: ctx.orgId } });
+    missing.clear();
+  }
+  const byCode = new Map(norms.map((n) => [n.code.toUpperCase(), n]));
+  const bySpec = new Map(norms.map((n) => [specKey(n), n]));
+  const normFor = (g: { normCode: string | null; normSpec: ImportedGang['normSpec'] }) => (g.normCode ? byCode.get(g.normCode.toUpperCase()) : g.normSpec ? bySpec.get(specKey(g.normSpec)) : undefined);
+  const existing = new Set((await prisma.dailyLabourReport.findMany({ where: { projectId }, select: { date: true } })).map((r) => isoDate(r.date)!));
+
   const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2);
   const projectWords = new Set([...words(project.name), project.code.toLowerCase()]);
+  const normInfo = (n: (typeof norms)[number] | undefined) => (n ? { id: n.id, code: n.code, name: n.name, unit: n.unit, outputPerDay: n.outputPerDay.toString(), masonsPerCrew: n.masonsPerCrew, helpersPerCrew: n.helpersPerCrew } : null);
+  const toGang = ({ date: _d, normCode, normSpec, normSpec2, ...g }: ImportedSheet['rows'][number], warnings: string[]) => {
+    const norm = normFor({ normCode, normSpec });
+    const norm2 = normSpec2 ? bySpec.get(specKey(normSpec2)) : undefined;
+    if (normCode && !norm) warnings.push(`Norm code ${normCode} is not in Labour norms`);
+    return { ...g, normId: norm?.id ?? null, norm: normInfo(norm), normId2: norm2?.id ?? null, norm2: normInfo(norm2) };
+  };
+
+  // Save every day of a weekly sheet at once (days that already have a report are left alone).
+  if (opts.saveAll === 'true') {
+    const sh = sheets.find((x) => x.sheet === opts.sheet);
+    if (!sh) throw validationError('Choose the sheet to save');
+    const created: string[] = [];
+    const skipped: string[] = [];
+    await transaction(async (tx) => {
+      const rates = await currentRates(tx, ctx.orgId);
+      for (const d of sh.dates) {
+        if (existing.has(d)) {
+          skipped.push(d);
+          continue;
+        }
+        assertReportDate(d);
+        const gangs = sh.rows.filter((r) => r.date === d).map((r) => toGang(r, []));
+        const p = await prepareGangs(tx, ctx.orgId, gangs.map((g) => ({ ...g, doneQty: g.doneQty === null ? null : String(g.doneQty), doneQty2: g.doneQty2 === null ? null : String(g.doneQty2) })), rates);
+        const measured = gangs.some((g) => g.doneQty !== null || g.progress !== 'PLANNED');
+        const r = await tx.dailyLabourReport.create({ data: { projectId, date: toDateOnly(d)!, status: measured ? 'COMPLETED' : 'PLANNED', masonRate: rates.masonRate, helperRate: rates.helperRate, remarks: `Imported from ${req.file!.originalname} (${sh.sheet})`, createdById: ctx.user.id, ...p.totals, gangs: { create: p.gangs } } });
+        await audit(tx, ctx, { action: 'CREATE', entityType: 'dailyLabourReport', entityId: r.id, projectId, summary: `Daily labour report ${d} imported from ${req.file!.originalname} (${sh.sheet}, ${p.gangs.length} gangs)` });
+        created.push(d);
+      }
+    });
+    return res.status(201).json({ created, skipped });
+  }
+
   const result = sheets.map((sh) => {
     const forDate = sh.rows.filter((r) => r.date === date);
     // Rows without a date, or a file holding a single other date, are offered with a warning.
     const rows = forDate.length ? forDate : sh.dates.length <= 1 ? sh.rows : [];
-    const warnings: string[] = [];
+    const warnings: string[] = [...sh.notes];
     if (!forDate.length && rows.length && sh.dates.length === 1) warnings.push(`This sheet is for ${sh.dates[0]}, not ${date}.`);
     if (!rows.length) warnings.push(`No rows for ${date}. Dates in this sheet: ${sh.dates.join(', ')}`);
-    const gangs = rows.map(({ date: _d, normCode, ...g }) => {
-      const norm = normCode ? norms.get(normCode.toUpperCase()) : undefined;
-      if (normCode && !norm) warnings.push(`Norm code ${normCode} is not in Labour norms`);
-      return { ...g, normId: norm?.id ?? null, norm: norm ? { id: norm.id, code: norm.code, name: norm.name, unit: norm.unit, outputPerDay: norm.outputPerDay.toString(), masonsPerCrew: norm.masonsPerCrew, helpersPerCrew: norm.helpersPerCrew } : null };
-    });
-    return { sheet: sh.sheet, dates: sh.dates, matchesProject: words(sh.sheet).some((w) => projectWords.has(w)) || sh.sheet.toLowerCase() === project.code.toLowerCase(), gangs, warnings: [...new Set(warnings)] };
+    const gangs = rows.map((r) => toGang(r, warnings));
+    return {
+      sheet: sh.sheet,
+      dates: sh.dates.map((d) => ({ date: d, rows: sh.rows.filter((r) => r.date === d).length, existing: existing.has(d) })),
+      matchesProject: words(sh.sheet).some((w) => projectWords.has(w)) || sh.sheet.toLowerCase() === project.code.toLowerCase(),
+      gangs,
+      warnings: [...new Set(warnings)],
+    };
   });
-  const preferred = result.find((r) => r.matchesProject && r.gangs.length) ?? (result.length === 1 ? result[0] : null);
-  res.json({ date, sheets: result, preferred: preferred?.sheet ?? null });
+  const preferred = result.find((r) => r.matchesProject && (r.gangs.length || r.dates.length > 1)) ?? (result.length === 1 ? result[0] : null);
+  res.json({ date, sheets: result, preferred: preferred?.sheet ?? null, missingNorms: [...missing.values()], canAddNorms: can(ctx, 'manpower.manage', null) });
 });
 
 projectLabourRouter.get('/:id', async (req, res) => {
