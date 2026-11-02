@@ -19,6 +19,7 @@ export interface Me {
   permissions: string[];
   roles: string[];
   visibleModules: string[];
+  whatsappContacts?: Array<{ name: string; role: string; phone: string }>;
 }
 
 interface AuthState {

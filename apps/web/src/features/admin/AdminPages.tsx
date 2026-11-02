@@ -363,6 +363,7 @@ export function IntegrationsPage() {
   const save = useMutation({ mutationFn: () => api.put(`/admin/integrations/${edit!.provider}`, { config: edit!.values }), onSuccess: () => { toast.success('Configuration saved (not active)'); setEdit(null); void qc.invalidateQueries({ queryKey: ['admin', 'integrations'] }); }, onError: err });
   const test = useMutation({ mutationFn: (p: string) => api.post<{ lastTestResult: string }>(`/admin/integrations/${p}/test`), onSuccess: (r) => { toast.info(r.lastTestResult); void qc.invalidateQueries({ queryKey: ['admin', 'integrations'] }); }, onError: err });
   const email = useQuery({ queryKey: ['admin', 'email'], queryFn: () => api.get<{ configured: boolean; host?: string; from?: string }>('/admin/email') });
+  const wa = useQuery({ queryKey: ['admin', 'whatsapp'], queryFn: () => api.get<{ whatsappApi: boolean; template: string }>('/daily-pack/status') });
   const emailTest = useMutation({ mutationFn: () => api.post<{ sent: boolean; error?: string; to: string }>('/admin/email/test'), onSuccess: (r) => (r.sent ? toast.success(`Test email sent to ${r.to}. Check the inbox (and spam folder).`) : toast.error(`Test email failed: ${r.error}`)), onError: err });
   return (
     <Page>
@@ -375,6 +376,22 @@ export function IntegrationsPage() {
             <span className="flex flex-wrap items-center gap-2"><Badge tone="neutral">Not set up</Badge> Add SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS (and optionally EMAIL_FROM) in the hosting settings, then redeploy.</span>
           )}
           <Button size="sm" variant="outline" disabled={!email.data?.configured} loading={emailTest.isPending} onClick={() => emailTest.mutate()}>Send test email to me</Button>
+        </div>
+      </Card>
+      <Card className="mb-4" title={<span className="flex items-center gap-2"><Plug className="h-4 w-4 text-muted" />WhatsApp Business (automatic daily send)</span>} subtitle="Sends the end-of-day pack by itself at the time set in Settings">
+        <div className="space-y-2 text-sm">
+          {wa.data?.whatsappApi ? (
+            <span className="flex flex-wrap items-center gap-2"><Badge tone="success">Configured</Badge> Template <strong>{wa.data.template}</strong></span>
+          ) : (
+            <>
+              <span className="flex flex-wrap items-center gap-2"><Badge tone="neutral">Not set up</Badge> Until then the pack is sent with one tap from Overview → Daily Send.</span>
+              <ol className="list-decimal space-y-0.5 pl-5 text-xs text-muted">
+                <li>Create a Meta Business account and add a WhatsApp number (WhatsApp Manager → API setup).</li>
+                <li>Create a message template named <code>daily_report</code> (category Utility) with a <strong>Document</strong> header and the body “Daily report {'{{1}}'}. The full PDF is attached.”, and wait for approval.</li>
+                <li>Add WHATSAPP_TOKEN (permanent system-user token), WHATSAPP_PHONE_NUMBER_ID, and if different WHATSAPP_TEMPLATE / WHATSAPP_TEMPLATE_LANG in the hosting settings, then redeploy.</li>
+              </ol>
+            </>
+          )}
         </div>
       </Card>
       <div className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -439,6 +456,9 @@ interface OrgSettings {
   dataRetentionYears: number;
   masonDayRate: string;
   helperDayRate: string;
+  whatsappContacts: Array<{ name: string; role: string; phone: string; email: string; dailyPack: boolean }>;
+  dailyPackAuto: boolean;
+  dailyPackTime: string;
 }
 interface SettingsResp {
   org: { id: string; name: string; code: string; baseCurrency: string; timezone: string; isDemo: boolean };
@@ -542,6 +562,30 @@ function GeneralSettings() {
           <Field label="Mason day rate (₹)" help="Used in new daily labour reports"><Input inputMode="decimal" value={d.settings.masonDayRate} disabled={ro} onChange={(e) => ss({ masonDayRate: e.target.value })} /></Field>
           <Field label="Helper day rate (₹)" help="Used in new daily labour reports"><Input inputMode="decimal" value={d.settings.helperDayRate} disabled={ro} onChange={(e) => ss({ helperDayRate: e.target.value })} /></Field>
           <Field label="Duplicate measurements"><Select options={[{ value: 'BLOCK_UNLESS_REASON', label: 'Block unless a reason is given' }, { value: 'WARN', label: 'Warn only' }]} value={d.settings.measurementDuplicateMode} disabled={ro} onChange={(e) => ss({ measurementDuplicateMode: e.target.value })} /></Field>
+        </div>
+      </Card>
+      <Card title="WhatsApp contacts & daily send" subtitle="The end-of-day pack (every document of the day on every project) goes to these people from Overview → Daily Send." className="lg:col-span-2">
+        <div className="space-y-2">
+          {(d.settings.whatsappContacts ?? []).map((c, i) => {
+            const upd = (p: Partial<typeof c>) => ss({ whatsappContacts: d.settings.whatsappContacts.map((x, j) => (j === i ? { ...x, ...p } : x)) });
+            return (
+              <div key={i} className="grid gap-2 sm:grid-cols-[1fr_1fr_1fr_1fr_auto_auto]">
+                <Field label="Name"><Input value={c.name} disabled={ro} placeholder="Gowtham" onChange={(e) => upd({ name: e.target.value })} /></Field>
+                <Field label="Role"><Input value={c.role} disabled={ro} placeholder="Executive Director" onChange={(e) => upd({ role: e.target.value })} /></Field>
+                <Field label="WhatsApp number" help="With country code"><Input value={c.phone} disabled={ro} inputMode="tel" placeholder="+91 98765 43210" onChange={(e) => upd({ phone: e.target.value })} /></Field>
+                <Field label="Email (optional)" help="Gets the PDF by email too"><Input value={c.email ?? ''} disabled={ro} inputMode="email" onChange={(e) => upd({ email: e.target.value })} /></Field>
+                <div className="flex items-end pb-2"><Checkbox label="Daily pack" checked={c.dailyPack !== false} disabled={ro} onChange={(e) => upd({ dailyPack: e.target.checked })} /></div>
+                {!ro && <div className="flex items-end pb-1"><Button variant="ghost" className="text-red-600" onClick={() => ss({ whatsappContacts: d.settings.whatsappContacts.filter((_, j) => j !== i) })}>Remove</Button></div>}
+              </div>
+            );
+          })}
+          {!d.settings.whatsappContacts?.length && <p className="text-sm text-muted">No contacts yet. The first contact gets the one-click button; others are in its menu.</p>}
+          {!ro && <Button variant="outline" size="sm" onClick={() => ss({ whatsappContacts: [...(d.settings.whatsappContacts ?? []), { name: '', role: '', phone: '', email: '', dailyPack: true }] })}>Add contact</Button>}
+          <div className="mt-3 flex flex-wrap items-end gap-4 border-t border-line pt-3">
+            <Checkbox label="Every day, make the pack ready (and send it where possible) at" checked={d.settings.dailyPackAuto} disabled={ro} onChange={(e) => ss({ dailyPackAuto: e.target.checked })} />
+            <Field label="Time"><Input type="time" className="w-32" value={d.settings.dailyPackTime} disabled={ro || !d.settings.dailyPackAuto} onChange={(e) => ss({ dailyPackTime: e.target.value })} /></Field>
+            <p className="max-w-xl text-xs text-muted">With the WhatsApp Business API set up, the pack is sent by itself. Without it, the project managers and administrators get a notification at this time and send it in one tap. Contacts with an email get the PDF by email.</p>
+          </div>
         </div>
       </Card>
       {!ro && (

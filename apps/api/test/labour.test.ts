@@ -41,7 +41,8 @@ describe('labour norms', () => {
     }
     expect((await w.c.auditor.post('/org/r/labourNorms', { code: 'X', name: 'X', outputPerDay: '1', unit: 'Nos', masonsPerCrew: 1, helpersPerCrew: 0 })).status).toBe(403);
     const opts = await w.c.se.ok.get(`${w.P}/lookups/labourNorms`);
-    expect(opts.map((o: any) => o.extra?.code ?? o.code).length).toBe(3);
+    expect(opts.map((o: any) => o.extra?.code ?? o.code).filter((c: string) => !c.startsWith('STD-')).length).toBe(3);
+    expect(opts.length).toBeGreaterThan(40); // plus the standard library
   });
 });
 
@@ -348,5 +349,131 @@ describe('weekly Excel in the current TOPROCK layout', () => {
 
     const again = await send({ saveAll: 'true', sheet: sheet.sheet });
     expect(again.body).toMatchObject({ created: [], skipped: [day(-6), day(-5)] }); // existing days are left alone
+  });
+});
+
+describe('one Excel file for several sites (Ponram, Kadara, Factory)', () => {
+  const D = day(-12);
+  let ponram: any;
+  let kadara: any;
+  let adm: ReturnType<typeof request.agent>;
+  beforeAll(async () => {
+    ponram = await w.c.admin.ok.post('/projects', { code: `PO${w.tag.slice(-5)}`, name: 'Ponram Residence', template: 'NONE', clientId: w.client.id, contractValue: '1000000', contractType: 'ITEM_RATE', currency: 'INR', taxRate: '0.18', retentionPct: '0.05', startDate: day(-60), plannedCompletionDate: day(300), status: 'ACTIVE' });
+    kadara = await w.c.admin.ok.post('/projects', { code: `KA${w.tag.slice(-5)}`, name: 'Kadara Cafe', template: 'NONE', clientId: w.client.id, contractValue: '1000000', contractType: 'ITEM_RATE', currency: 'INR', taxRate: '0.18', retentionPct: '0.05', startDate: day(-60), plannedCompletionDate: day(300), status: 'ACTIVE' });
+    for (const p of [ponram, kadara]) await w.c.admin.ok.post(`/projects/${p.id}/members`, { userId: w.users.se.id });
+    adm = request.agent(app);
+    await adm.post('/api/auth/login').set('X-Requested-With', 'toprock').send({ email: w.users.admin.email, password: PASSWORD });
+  });
+
+  /** The upload template layout, one sheet per site. */
+  async function file() {
+    const wb = new ExcelJS.Workbook();
+    const sheets: Record<string, Array<[string, string, number, number, number | null, string | null]>> = {
+      Ponram: [
+        ['Floor screeding – 1st floor hall', 'Ravi, Mani', 1, 1, 500, 'Sq.ft'],
+        ['Brick installation', 'Anuj, Munna, Arun', 1, 2, 600, 'Nos'],
+      ],
+      Kadara: [['Terrace screeding work', 'Selva, Kannan', 1, 1, 300, 'Sq.ft'], ['Mural sketching', 'Ravi', 1, 0, 20, 'Sq.ft']],
+      Factory: [['Site cleaning', 'Nihal', 0, 1, null, null]],
+    };
+    for (const [name, rows] of Object.entries(sheets)) {
+      const ws = wb.addWorksheet(name);
+      ws.addRow(['Date', 'Work', 'Workers', 'Mason Used', 'Helper Used', 'Done Qty', 'Unit', 'Note']);
+      for (const [work, workers, m, h, q, u] of rows) ws.addRow([new Date(`${D}T00:00:00Z`), work, workers, m, h, q, u, '']);
+    }
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+  const send = async (agent: ReturnType<typeof request.agent>, fields: Record<string, string> = {}) => {
+    let req = agent.post(`/api/projects/${ponram.id}/labour-reports/import-excel`).set('X-Requested-With', 'toprock').field('date', D);
+    for (const [k, v] of Object.entries(fields)) req = req.field(k, v);
+    return req.attach('file', await file(), { filename: 'sites.xlsx' });
+  };
+
+  it('sends each sheet to the project it is named after', async () => {
+    const r = await send(se);
+    expect(r.status).toBe(200);
+    const by = Object.fromEntries(r.body.sheets.map((s: any) => [s.sheet, s]));
+    expect(by.Ponram).toMatchObject({ matchesProject: true, project: { id: ponram.id }, newDays: 1 });
+    expect(by.Kadara).toMatchObject({ matchesProject: false, project: { id: kadara.id }, newDays: 1 });
+    expect(by.Factory.project).toBeNull();
+    expect(r.body.preferred).toBe('Ponram');
+  });
+
+  it('every common work is measured from the standard library; works it cannot name are listed for an average', async () => {
+    const r = await send(se);
+    const [screed, brick] = r.body.sheets[0].gangs;
+    // Own norm (BRICK-NOS) wins over the standard brickwork norm; screeding comes from the standard library.
+    expect(brick.normId).toBe(norms['BRICK-NOS'].id);
+    expect(screed.norm).toMatchObject({ code: 'STD-SCREED', unit: 'Sq.ft', outputPerDay: '250', masonsPerCrew: 1, helpersPerCrew: 2 });
+    expect(r.body.sheets.find((x: any) => x.sheet === 'Kadara').gangs[0].norm.code).toBe('STD-ROOF-SCREED'); // terrace screed
+    expect(r.body.unmeasured.map((u: any) => u.work)).toEqual(['Mural sketching']);
+    // A typed average becomes the organisation's own norm and is used from then on.
+    const ok = await send(adm, { newNorms: JSON.stringify([{ name: 'Mural sketching', unit: 'Sq.ft', outputPerDay: 40, masonsPerCrew: 1, helpersPerCrew: 0 }]) });
+    expect(ok.status).toBe(200);
+    expect(ok.body.unmeasured).toEqual([]);
+    expect((await send(adm, { newNorms: JSON.stringify([{ name: 'X', unit: 'Sq.ft', outputPerDay: 0, masonsPerCrew: 1, helpersPerCrew: 0 }]) })).status).toBe(422);
+  });
+
+  it('saves every sheet to its own project in one go, with profit or loss', async () => {
+    const r = await send(se, { saveAllSheets: 'true' });
+    expect(r.status).toBe(201);
+    const by = Object.fromEntries(r.body.results.map((x: any) => [x.sheet, x]));
+    expect(by.Ponram).toMatchObject({ project: { id: ponram.id }, created: [D] });
+    expect(by.Kadara).toMatchObject({ project: { id: kadara.id }, created: [D] });
+    expect(by.Factory).toMatchObject({ project: null, created: [] });
+    const s = await w.c.admin.ok.get(`/labour-reports/summary?from=${D}&to=${D}`);
+    const row = (pid: string) => s.rows.find((x: any) => x.projectId === pid);
+    // Kadara: 300 Sq.ft terrace screed against 150 a day for 1 mason → 200 %; the 20 Sq.ft mural (40 a day) → 50 %.
+    expect(row(kadara.id).result).toBe('PROFIT');
+    expect(Number(row(kadara.id).profitLoss)).toBeCloseTo(2400 * 1 + 1400 * -0.5, 2); // ₹1,400 mason, ₹1,000 helper
+    expect(row(ponram.id).result).not.toBe('NOT_MEASURED');
+    expect((await send(se, { saveAllSheets: 'true' })).body.created).toEqual([]); // nothing twice
+  });
+
+  it('typed reports pick the norm from the work name too', async () => {
+    const r = await w.c.se.ok.post(`/projects/${kadara.id}/labour-reports`, { date: day(-13), gangs: [
+      { work: 'Wall putty 2nd coat', workers: ['A'], masons: 1, helpers: 0, doneQty: '300', progress: 'DONE' },
+      { work: 'Vitrified tile laying – lobby', workers: ['B', 'C'], masons: 1, helpers: 1, doneQty: '80', unit: 'Sq.ft', progress: 'DONE' },
+    ] });
+    expect(r.gangs.map((g: any) => g.norm?.code)).toEqual(['STD-PUTTY', 'STD-TILE-FLOOR']);
+    expect(r.gangs[0]).toMatchObject({ unit: 'Sq.ft', result: 'PROFIT' }); // 300 against 250 a day
+    expect(Number(r.gangs[0].outputPct)).toBe(1.2);
+    expect(r.gangs[1].result).toBe('LOSS'); // 80 against 100 a day
+    expect(Number(r.gangs[1].outputPct)).toBe(0.8);
+  });
+});
+
+describe('matching helpers', () => {
+  it('finds the norm named in the work, never a doubtful one', async () => {
+    const { normByName, projectForSheet } = await import('../src/services/labourExcelImport.js');
+    const list = [
+      { name: 'Screeding', unit: 'Sq.ft' },
+      { name: 'Brick installation', unit: 'Nos' },
+      { name: 'Wall plastering', unit: 'Sq.ft' },
+      { name: 'Ceiling plastering', unit: 'Sq.ft' },
+    ];
+    expect(normByName('Floor screeding – 2nd floor', 'Sq.ft', list)?.name).toBe('Screeding');
+    expect(normByName('Floor screeding', 'Nos', list)).toBeUndefined(); // unit disagrees
+    expect(normByName('Glue filling + brick installation', null, list)?.name).toBe('Brick installation');
+    expect(normByName('Plastering', 'Sq.ft', list)).toBeUndefined(); // wall or ceiling? not guessed
+    expect(normByName('Wall plastering 2nd floor', 'Sq.ft', list)?.name).toBe('Wall plastering');
+    expect(normByName('Ceiling plastering 1st floor', 'Sq.ft', list)?.name).toBe('Ceiling plastering');
+    const projects = [{ name: 'Ponram Residence', code: 'PON' }, { name: 'Kadara Cafe', code: 'KAD' }, { name: 'Toprock Factory', code: 'FAC' }];
+    expect(projectForSheet('Ponram', projects)?.code).toBe('PON');
+    expect(projectForSheet('FAC', projects)?.code).toBe('FAC');
+    expect(projectForSheet('Factory', projects)?.code).toBe('FAC');
+    expect(projectForSheet('Sheet1', projects)).toBeUndefined();
+    // Other words and the standard library: own norms first, the most specific wins, ties match nothing.
+    const { STANDARD_LABOUR_NORMS } = await import('../src/services/standardNorms.js');
+    const code = (work: string, unit: string | null = null) => normByName(work, unit, STANDARD_LABOUR_NORMS)?.code;
+    expect(code('Ceiling plastering 1st floor')).toBe('STD-PLAS-CEIL');
+    expect(code('External plastering north side')).toBe('STD-PLAS-EXT');
+    expect(code('Toilet wall tiling')).toBe('STD-TILE-WALL');
+    expect(code('Glass partition fixing')).toBe('STD-GLAZING');
+    expect(code('Gypsum false ceiling framing')).toBe('STD-GYP-CEIL');
+    expect(code('Core cutting for AC drain')).toBe('STD-CORE-CUT');
+    expect(code('Slab shuttering', 'Sq.ft')).toBe('STD-SHUTTER');
+    expect(code('Light box framing', 'Nos')).toBeUndefined();
+    expect(normByName('Floor screeding', 'Sq.ft', [...STANDARD_LABOUR_NORMS, { code: 'MY-SCREED', name: 'Screed', unit: 'Sq.ft' }])?.code).toBe('MY-SCREED');
   });
 });
