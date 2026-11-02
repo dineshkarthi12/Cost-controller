@@ -350,3 +350,106 @@ describe('weekly Excel in the current TOPROCK layout', () => {
     expect(again.body).toMatchObject({ created: [], skipped: [day(-6), day(-5)] }); // existing days are left alone
   });
 });
+
+describe('one Excel file for several sites (Ponram, Kadara, Factory)', () => {
+  const D = day(-12);
+  let ponram: any;
+  let kadara: any;
+  let adm: ReturnType<typeof request.agent>;
+  beforeAll(async () => {
+    ponram = await w.c.admin.ok.post('/projects', { code: `PO${w.tag.slice(-5)}`, name: 'Ponram Residence', template: 'NONE', clientId: w.client.id, contractValue: '1000000', contractType: 'ITEM_RATE', currency: 'INR', taxRate: '0.18', retentionPct: '0.05', startDate: day(-60), plannedCompletionDate: day(300), status: 'ACTIVE' });
+    kadara = await w.c.admin.ok.post('/projects', { code: `KA${w.tag.slice(-5)}`, name: 'Kadara Cafe', template: 'NONE', clientId: w.client.id, contractValue: '1000000', contractType: 'ITEM_RATE', currency: 'INR', taxRate: '0.18', retentionPct: '0.05', startDate: day(-60), plannedCompletionDate: day(300), status: 'ACTIVE' });
+    for (const p of [ponram, kadara]) await w.c.admin.ok.post(`/projects/${p.id}/members`, { userId: w.users.se.id });
+    adm = request.agent(app);
+    await adm.post('/api/auth/login').set('X-Requested-With', 'toprock').send({ email: w.users.admin.email, password: PASSWORD });
+  });
+
+  /** The upload template layout, one sheet per site. */
+  async function file() {
+    const wb = new ExcelJS.Workbook();
+    const sheets: Record<string, Array<[string, string, number, number, number | null, string | null]>> = {
+      Ponram: [
+        ['Floor screeding – 1st floor hall', 'Ravi, Mani', 1, 1, 500, 'Sq.ft'],
+        ['Brick installation', 'Anuj, Munna, Arun', 1, 2, 600, 'Nos'],
+      ],
+      Kadara: [['Terrace screeding work', 'Selva, Kannan', 1, 1, 300, 'Sq.ft']],
+      Factory: [['Site cleaning', 'Nihal', 0, 1, null, null]],
+    };
+    for (const [name, rows] of Object.entries(sheets)) {
+      const ws = wb.addWorksheet(name);
+      ws.addRow(['Date', 'Work', 'Workers', 'Mason Used', 'Helper Used', 'Done Qty', 'Unit', 'Note']);
+      for (const [work, workers, m, h, q, u] of rows) ws.addRow([new Date(`${D}T00:00:00Z`), work, workers, m, h, q, u, '']);
+    }
+    return Buffer.from(await wb.xlsx.writeBuffer());
+  }
+  const send = async (agent: ReturnType<typeof request.agent>, fields: Record<string, string> = {}) => {
+    let req = agent.post(`/api/projects/${ponram.id}/labour-reports/import-excel`).set('X-Requested-With', 'toprock').field('date', D);
+    for (const [k, v] of Object.entries(fields)) req = req.field(k, v);
+    return req.attach('file', await file(), { filename: 'sites.xlsx' });
+  };
+
+  it('sends each sheet to the project it is named after', async () => {
+    const r = await send(se);
+    expect(r.status).toBe(200);
+    const by = Object.fromEntries(r.body.sheets.map((s: any) => [s.sheet, s]));
+    expect(by.Ponram).toMatchObject({ matchesProject: true, project: { id: ponram.id }, newDays: 1 });
+    expect(by.Kadara).toMatchObject({ matchesProject: false, project: { id: kadara.id }, newDays: 1 });
+    expect(by.Factory.project).toBeNull();
+    expect(r.body.preferred).toBe('Ponram');
+  });
+
+  it('works with a quantity but no per-day average are listed; typing the average measures them', async () => {
+    const r = await send(se);
+    // Brick installation is matched by name to the BRICK-NOS norm; screeding has no norm yet.
+    expect(r.body.sheets[0].gangs[1].normId).toBe(norms['BRICK-NOS'].id);
+    expect(r.body.unmeasured.map((u: any) => [u.unit, u.sheets])).toEqual([
+      ['Sq.ft', ['Ponram']],
+      ['Sq.ft', ['Kadara']],
+    ]);
+    const avg = JSON.stringify([{ name: 'Screeding', unit: 'Sq.ft', outputPerDay: 400, masonsPerCrew: 1, helpersPerCrew: 1 }]);
+    const ok = await send(adm, { newNorms: avg });
+    expect(ok.status).toBe(200);
+    expect(ok.body.unmeasured).toEqual([]);
+    expect(ok.body.sheets[0].gangs[0].norm).toMatchObject({ name: 'Screeding', outputPerDay: '400', unit: 'Sq.ft' });
+    expect((await send(adm, { newNorms: JSON.stringify([{ name: 'X', unit: 'Sq.ft', outputPerDay: 0, masonsPerCrew: 1, helpersPerCrew: 0 }]) })).status).toBe(422);
+  });
+
+  it('saves every sheet to its own project in one go, with profit or loss', async () => {
+    const r = await send(se, { saveAllSheets: 'true' });
+    expect(r.status).toBe(201);
+    const by = Object.fromEntries(r.body.results.map((x: any) => [x.sheet, x]));
+    expect(by.Ponram).toMatchObject({ project: { id: ponram.id }, created: [D] });
+    expect(by.Kadara).toMatchObject({ project: { id: kadara.id }, created: [D] });
+    expect(by.Factory).toMatchObject({ project: null, created: [] });
+    const s = await w.c.admin.ok.get(`/labour-reports/summary?from=${D}&to=${D}`);
+    const row = (pid: string) => s.rows.find((x: any) => x.projectId === pid);
+    // Kadara: 300 Sq.ft against 400 a day for 1 mason → 75 %, a loss of a quarter of the day's labour.
+    expect(row(kadara.id)).toMatchObject({ outputPct: '0.7500', result: 'LOSS' });
+    expect(Number(row(kadara.id).profitLoss)).toBeCloseTo(-0.25 * Number(row(kadara.id).labourCost), 2);
+    expect(row(ponram.id).result).not.toBe('NOT_MEASURED');
+    expect((await send(se, { saveAllSheets: 'true' })).body.created).toEqual([]); // nothing twice
+  });
+});
+
+describe('matching helpers', () => {
+  it('finds the norm named in the work, never a doubtful one', async () => {
+    const { normByName, projectForSheet } = await import('../src/services/labourExcelImport.js');
+    const list = [
+      { name: 'Screeding', unit: 'Sq.ft' },
+      { name: 'Brick installation', unit: 'Nos' },
+      { name: 'Wall plastering', unit: 'Sq.ft' },
+      { name: 'Ceiling plastering', unit: 'Sq.ft' },
+    ];
+    expect(normByName('Floor screeding – 2nd floor', 'Sq.ft', list)?.name).toBe('Screeding');
+    expect(normByName('Floor screeding', 'Nos', list)).toBeUndefined(); // unit disagrees
+    expect(normByName('Glue filling + brick installation', null, list)?.name).toBe('Brick installation');
+    expect(normByName('Plastering', 'Sq.ft', list)).toBeUndefined(); // wall or ceiling? not guessed
+    expect(normByName('Wall plastering 2nd floor', 'Sq.ft', list)?.name).toBe('Wall plastering');
+    expect(normByName('Ceiling plastering 1st floor', 'Sq.ft', list)?.name).toBe('Ceiling plastering');
+    const projects = [{ name: 'Ponram Residence', code: 'PON' }, { name: 'Kadara Cafe', code: 'KAD' }, { name: 'Toprock Factory', code: 'FAC' }];
+    expect(projectForSheet('Ponram', projects)?.code).toBe('PON');
+    expect(projectForSheet('FAC', projects)?.code).toBe('FAC');
+    expect(projectForSheet('Factory', projects)?.code).toBe('FAC');
+    expect(projectForSheet('Sheet1', projects)).toBeUndefined();
+  });
+});

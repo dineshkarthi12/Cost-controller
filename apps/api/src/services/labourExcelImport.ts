@@ -258,3 +258,43 @@ export async function labourTemplate(norms: Array<{ code: string; name: string; 
   for (const n of norms) ns.addRow({ code: n.code, name: n.name, out: Number(n.outputPerDay), unit: n.unit, m: n.masonsPerCrew, h: n.helpersPerCrew });
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
+
+// Words that say nothing about the kind of work: places, floors and filler.
+const GENERIC = new Set(['work', 'works', 'done', 'and', 'for', 'the', 'with', 'from', 'area', 'floor', 'level', 'side', 'room', 'hall', 'first', 'second', 'third', 'ground', 'balance', 'pending', 'complete', 'completed', 'installed', 'progress']);
+const stem = (w: string) => w.replace(/ing$/, '').replace(/s$/, '');
+export function workWords(s: string): string[] {
+  return s.toLowerCase().replace(/[^a-z ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && !GENERIC.has(w)).map(stem);
+}
+
+/**
+ * The per-day norm whose name describes this work: every telling word of the norm's name appears
+ * in the work ("Screeding" → "Floor screeding 2nd floor", "Brick installation" → "Glue filling +
+ * brick installation"). The unit must agree when the row has one. The norm naming the most words
+ * wins; a tie between different norms matches nothing, so a wrong norm is never picked.
+ */
+export function normByName<N extends { name: string; unit: string }>(work: string, unit: string | null, norms: N[]): N | undefined {
+  const have = new Set(workWords(work));
+  let best: N | undefined;
+  let bestScore = 0;
+  let tie = false;
+  for (const n of norms) {
+    if (unit && n.unit !== unit) continue;
+    const need = [...new Set(workWords(n.name))];
+    if (!need.length || !need.every((w) => have.has(w))) continue;
+    if (need.length > bestScore) [best, bestScore, tie] = [n, need.length, false];
+    else if (need.length === bestScore) tie = true;
+  }
+  return tie ? undefined : best;
+}
+
+/** Which project a sheet belongs to: its name shares words with the project's name or is its code. */
+export function projectForSheet<P extends { name: string; code: string }>(sheet: string, projects: P[]): P | undefined {
+  const words = (s: string) => s.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\s+/).filter((w) => w.length > 2 && w !== 'project' && w !== 'site');
+  const sw = new Set(words(sheet));
+  const scored = projects
+    .map((p) => ({ p, score: sheet.trim().toLowerCase() === p.code.toLowerCase() ? 100 : [...new Set([...words(p.name), p.code.toLowerCase()])].filter((w) => sw.has(w)).length }))
+    .filter((x) => x.score > 0)
+    .sort((a, b) => b.score - a.score);
+  if (!scored.length || (scored.length > 1 && scored[1].score === scored[0].score)) return undefined;
+  return scored[0].p;
+}
