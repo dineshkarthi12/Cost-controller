@@ -50,7 +50,9 @@ export const boqItems: ResourceDef = {
   area: 'boq',
   projectScoped: true,
   titleField: 'itemCode',
-  defaultSort: { field: 'itemCode', dir: 'asc' },
+  // In the order of the BOQ file (imports keep the file's row order; items added later come after).
+  defaultSort: { field: 'createdAt', dir: 'asc' },
+  pageSize: 500,
   searchFields: ['itemCode', 'description', 'boqRef', 'section'],
   description: 'Executed, verified and certified quantities are maintained by the system from progress and measurement workflows.',
   fields: [

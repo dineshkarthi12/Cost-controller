@@ -96,6 +96,8 @@ export interface ResourceDef {
   /** Status a non-workflow record may be set to through PATCH. */
   manualStatuses?: readonly string[];
   defaultSort?: { field: string; dir: 'asc' | 'desc' };
+  /** Rows per page in the list (default 25); long lists such as the BOQ show everything on one page. */
+  pageSize?: number;
   searchFields?: string[];
   /** Hard delete allowed (only in editable statuses). Financial docs are cancelled instead. */
   deletable?: boolean;

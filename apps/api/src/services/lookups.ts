@@ -13,7 +13,7 @@ interface LookupDef {
   search: string[];
   where?: Record<string, unknown>;
   select: Record<string, boolean>;
-  orderBy?: Record<string, 'asc' | 'desc'>;
+  orderBy?: Record<string, 'asc' | 'desc'> | Array<Record<string, 'asc' | 'desc'>>;
   /** Extra fields returned to the client (e.g. unit, rate) for form auto-fill. */
   extra?: string[];
 }
@@ -29,7 +29,7 @@ export const LOOKUPS: Record<RefSource, LookupDef> = {
   clients: { model: 'party', scope: 'org', where: kind('CLIENT'), label: (r) => `${r.name}`, search: ['code', 'name'], select: { id: true, code: true, name: true }, orderBy: { name: 'asc' } },
   materials: { model: 'material', scope: 'org', label: (r) => `${r.code} — ${r.name}`, search: ['code', 'name'], select: { id: true, code: true, name: true, unit: true, standardRate: true }, orderBy: { code: 'asc' }, extra: ['unit', 'standardRate'] },
   users: { model: 'user', scope: 'orgUsers', label: (r) => `${r.name}`, search: ['name', 'email'], select: { id: true, name: true, email: true, designation: true }, orderBy: { name: 'asc' }, extra: ['designation'] },
-  boqItems: { model: 'boqItem', scope: 'project', label: (r) => `${r.itemCode} — ${String(r.description).slice(0, 60)}`, search: ['itemCode', 'description'], select: { id: true, itemCode: true, description: true, unit: true, unitRate: true }, orderBy: { itemCode: 'asc' }, extra: ['unit', 'unitRate'] },
+  boqItems: { model: 'boqItem', scope: 'project', label: (r) => `${r.itemCode} — ${String(r.description).slice(0, 60)}`, search: ['itemCode', 'description'], select: { id: true, itemCode: true, description: true, unit: true, unitRate: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], extra: ['unit', 'unitRate'] },
   activities: { model: 'activity', scope: 'project', label: (r) => `${r.code} — ${r.name}`, search: ['code', 'name'], select: { id: true, code: true, name: true, unit: true }, orderBy: { code: 'asc' }, extra: ['unit'] },
   stores: { model: 'store', scope: 'project', label: (r) => `${r.code} — ${r.name}`, search: ['code', 'name'], select: { id: true, code: true, name: true }, orderBy: { code: 'asc' } },
   equipment: { model: 'equipment', scope: 'org', label: (r) => `${r.code} — ${r.name}`, search: ['code', 'name'], select: { id: true, code: true, name: true, ownership: true }, orderBy: { code: 'asc' }, extra: ['ownership'] },

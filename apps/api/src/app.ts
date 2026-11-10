@@ -36,6 +36,9 @@ import { manpowerRouter } from './routes/manpower.js';
 import { scheduleRouter } from './routes/schedule.js';
 import { qualityRouter } from './routes/quality.js';
 import { labourRouter, projectLabourRouter } from './routes/labourReports.js';
+import { dailyDigestRouter } from './routes/dailyDigest.js';
+import { dailyPackRouter, publicPackRouter } from './routes/dailyPack.js';
+import { dailyPackJob } from './services/dailyPack.js';
 import { bomRouter } from './routes/bom.js';
 import { workReportsRouter } from './routes/workReports.js';
 import { runAllJobs } from './jobs.js';
@@ -77,6 +80,17 @@ export function createApp() {
     res.json(await runAllJobs());
   });
 
+  app.get('/api/cron/daily-pack', async (req, res) => {
+    const expected = Buffer.from(`Bearer ${config.cronSecret}`);
+    const given = Buffer.from(req.get('authorization') ?? '');
+    if (!config.cronSecret || given.length !== expected.length || !timingSafeEqual(given, expected)) {
+      return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Endpoint not found' } });
+    }
+    res.json(await dailyPackJob());
+  });
+  // Signed links to the end-of-day pack open without a login (WhatsApp recipients).
+  app.use('/api/public', publicPackRouter);
+
   app.use('/api', requireCsrfHeader);
   app.use('/api/auth', authRouter);
 
@@ -101,6 +115,8 @@ export function createApp() {
   api.use('/projects/:projectId/schedule', scheduleRouter);
   api.use('/projects/:projectId/inspections', qualityRouter);
   api.use('/projects/:projectId/labour-reports', projectLabourRouter);
+  api.use('/projects/:projectId/daily-digest', dailyDigestRouter);
+  api.use('/daily-pack', dailyPackRouter);
   api.use('/labour-reports', labourRouter);
   api.use('/projects/:projectId/bom', bomRouter);
   api.use('/work-reports', workReportsRouter);

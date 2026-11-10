@@ -568,7 +568,7 @@ const REPORTS: ReportDef[] = [
     permission: 'boq.view',
     description: 'Contract, executed, verified and certified quantity and value per BOQ item.',
     async run(p) {
-      const items = await prisma.boqItem.findMany({ where: { projectId: p.projectId, isActive: true }, orderBy: { itemCode: 'asc' } });
+      const items = await prisma.boqItem.findMany({ where: { projectId: p.projectId, isActive: true }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] }); // as in the BOQ file
       const rows = items.map((b) => {
         const rate = D(b.revisedRate ?? b.unitRate);
         const qtyC = D(b.revisedQty ?? b.contractQty);

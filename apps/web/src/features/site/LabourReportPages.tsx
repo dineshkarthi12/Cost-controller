@@ -252,6 +252,9 @@ interface ExcelSheet {
   sheet: string;
   dates: Array<{ date: string; rows: number; existing: boolean }>;
   matchesProject: boolean;
+  /** The project this sheet is named after (Ponram, Kadara, Factory…), among those you can enter labour for. */
+  project: { id: string; name: string; code: string } | null;
+  newDays: number;
   gangs: Array<{ work: string; workers: string[]; masons: number; helpers: number; normId: string | null; norm: NormInfo | null; doneQty: number | null; unit: string | null; normId2: string | null; norm2: NormInfo | null; doneQty2: number | null; unit2: string | null; progress: GangProgress; outcome: string | null }>;
   warnings: string[];
 }
@@ -263,11 +266,77 @@ interface MissingNorm {
   masonsPerCrew: number;
   helpersPerCrew: number;
 }
+interface Unmeasured {
+  work: string;
+  unit: string | null;
+  rows: number;
+  sheets: string[];
+}
 interface ExcelResult {
   sheets: ExcelSheet[];
   preferred: string | null;
   missingNorms: MissingNorm[];
+  unmeasured: Unmeasured[];
   canAddNorms: boolean;
+}
+interface SaveResult {
+  created: string[];
+  skipped: string[];
+  results?: Array<{ sheet: string; project: { id: string; name: string } | null; created: string[]; skipped: string[]; reason?: string }>;
+}
+interface AverageDraft {
+  key: string;
+  name: string;
+  unit: string;
+  outputPerDay: string;
+  masonsPerCrew: string;
+  helpersPerCrew: string;
+}
+
+/** A short norm name from the work text: "Floor screeding work – 2nd floor hall" → "Floor screeding". */
+const shortName = (work: string) => work.split(/\s+[–-]\s+|\(|,/)[0].replace(/\b(work|works|done)\b/gi, '').replace(/\s+/g, ' ').trim().slice(0, 60) || work.slice(0, 60);
+
+/**
+ * Work in the file with a quantity but no per-day norm. Typing the average done in a day
+ * (and the crew it takes) adds it to Labour norms, so this and later reports show profit or loss.
+ */
+function AverageNorms({ items, loading, onSave }: { items: Unmeasured[]; loading: boolean; onSave: (norms: AverageDraft[]) => void }) {
+  const [rows, setRows] = useState<AverageDraft[]>(() => items.map((u, i) => ({ key: `a${i}`, name: shortName(u.work), unit: u.unit ?? '', outputPerDay: '', masonsPerCrew: '1', helpersPerCrew: '1' })));
+  const set = (key: string, p: Partial<AverageDraft>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)));
+  const ready = rows.filter((r) => Number(r.outputPerDay) > 0 && r.unit && r.name.trim());
+  return (
+    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+      <p className="font-medium">{items.length} work(s) in the file have a quantity but no per-day average, so they show no profit or loss:</p>
+      <p className="mt-1 text-xs">Enter the average work done in one day by the crew (e.g. screeding 400 Sq.ft a day for 1 mason + 1 helper). It is added to Labour norms and used for every row whose work has these words.</p>
+      <ul className="mt-2 space-y-2">
+        {rows.map((r, i) => (
+          <li key={r.key} className="rounded-md border border-amber-200 bg-white p-2 text-ink">
+            <p className="text-xs text-muted">“{items[i].work}” · {items[i].rows} row(s) · {items[i].sheets.join(', ')}</p>
+            <div className="mt-1 grid grid-cols-2 gap-2 sm:grid-cols-6">
+              <Field label="Work name" htmlFor={`${r.key}-n`} className="col-span-2">
+                <Input id={`${r.key}-n`} value={r.name} onChange={(e) => set(r.key, { name: e.target.value })} />
+              </Field>
+              <Field label="Average per day" htmlFor={`${r.key}-o`}>
+                <Input id={`${r.key}-o`} inputMode="decimal" value={r.outputPerDay} placeholder="400" onChange={(e) => set(r.key, { outputPerDay: e.target.value.replace(/[^\d.]/g, '') })} />
+              </Field>
+              <Field label="Unit" htmlFor={`${r.key}-u`}>
+                <Select id={`${r.key}-u`} options={['', ...LABOUR_UNITS].map((u) => ({ value: u, label: u || '—' }))} value={r.unit} onChange={(e) => set(r.key, { unit: e.target.value })} />
+              </Field>
+              <Field label="Masons" htmlFor={`${r.key}-m`}>
+                <Input id={`${r.key}-m`} inputMode="numeric" value={r.masonsPerCrew} onChange={(e) => set(r.key, { masonsPerCrew: e.target.value.replace(/\D/g, '') })} />
+              </Field>
+              <Field label="Helpers" htmlFor={`${r.key}-h`}>
+                <Input id={`${r.key}-h`} inputMode="numeric" value={r.helpersPerCrew} onChange={(e) => set(r.key, { helpersPerCrew: e.target.value.replace(/\D/g, '') })} />
+              </Field>
+            </div>
+          </li>
+        ))}
+      </ul>
+      <Button size="sm" className="mt-2" disabled={!ready.length} loading={loading} onClick={() => onSave(ready)}>
+        {ready.length ? `Add ${ready.length} per-day average(s) and continue` : 'Enter an average per day to continue'}
+      </Button>
+    </div>
+  );
 }
 
 function useExcelReader(projectId: string, date: string, onRead: (drafts: Draft[], stage: 'morning' | 'evening', notes: string[]) => void) {
@@ -288,25 +357,32 @@ function useExcelReader(projectId: string, date: string, onRead: (drafts: Draft[
     form.append('date', date);
     for (const [k, v] of Object.entries(extra)) form.append(k, v);
     form.append('file', f);
-    return api.upload<ExcelResult & { created?: string[]; skipped?: string[] }>(`/projects/${projectId}/labour-reports/import-excel`, form);
+    return api.upload<ExcelResult & SaveResult>(`/projects/${projectId}/labour-reports/import-excel`, form);
   };
   const m = useMutation({
     mutationFn: ({ f, extra }: { f: File; extra?: Record<string, string> }) => send(f, extra),
     onSuccess: (r, v) => {
-      if (v.extra?.saveAll) {
-        toast.success(`${r.created?.length ?? 0} day(s) saved${r.skipped?.length ? `; ${r.skipped.length} day(s) already had a report and were left as they were` : ''}`);
+      if (v.extra?.saveAll || v.extra?.saveAllSheets) {
+        if (r.results) {
+          for (const x of r.results) {
+            if (!x.project) toast.error(`${x.sheet}: ${x.reason ?? 'no matching project'}`);
+            else toast.success(`${x.sheet} → ${x.project.name}: ${x.created.length} day(s) saved${x.skipped.length ? `, ${x.skipped.length} already there` : ''}`);
+          }
+        } else toast.success(`${r.created?.length ?? 0} day(s) saved${r.skipped?.length ? `; ${r.skipped.length} day(s) already had a report and were left as they were` : ''}`);
         setResult(null);
         void qc.invalidateQueries({ queryKey: ['p'] });
         return;
       }
       const pref = r.sheets.find((x) => x.sheet === r.preferred);
-      // Fill straight away when there is nothing to decide: one sheet for this site, one day, all norms known.
-      if (pref && pref.dates.length <= 1 && !r.missingNorms.length) use(pref);
+      // Fill straight away when there is nothing to decide: one sheet in the file, one day, all norms known.
+      if (pref && r.sheets.length === 1 && pref.dates.length <= 1 && !r.missingNorms.length && !r.unmeasured.length) use(pref);
       else setResult(r);
     },
     onError: (e: Error) => toast.error(e.message),
   });
   const ordered = result ? [...result.sheets].sort((a, b) => Number(b.sheet === result.preferred) - Number(a.sheet === result.preferred)) : [];
+  const routed = result?.sheets.filter((s) => s.project) ?? [];
+  const routedDays = routed.reduce((a, s) => a + s.newDays, 0);
   const ui = (
     <>
       <input
@@ -325,7 +401,7 @@ function useExcelReader(projectId: string, date: string, onRead: (drafts: Draft[
         }}
       />
       {result && file && (
-        <Dialog open onOpenChange={(o) => !o && setResult(null)} size="lg" title="Use the Excel file" description="Choose the sheet for this site. A weekly file can be saved for all its days at once.">
+        <Dialog open onOpenChange={(o) => !o && setResult(null)} size="lg" title="Use the Excel file" description="Each sheet goes to the project it is named after. Save them all at once, or fill one into this page.">
           <div className="space-y-4">
             {!!result.missingNorms.length && (
               <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
@@ -341,25 +417,60 @@ function useExcelReader(projectId: string, date: string, onRead: (drafts: Draft[
                 )}
               </div>
             )}
+            {!!result.unmeasured.length && (result.canAddNorms ? (
+              <AverageNorms
+                key={result.unmeasured.map((u) => u.work).join('|')}
+                items={result.unmeasured}
+                loading={m.isPending}
+                onSave={(rows) => m.mutate({ f: file, extra: { newNorms: JSON.stringify(rows.map((r) => ({ name: r.name.trim(), unit: r.unit, outputPerDay: r.outputPerDay, masonsPerCrew: r.masonsPerCrew || '0', helpersPerCrew: r.helpersPerCrew || '0' }))) } })}
+              />
+            ) : (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                {result.unmeasured.length} work(s) have a quantity but no per-day average ({result.unmeasured.map((u) => u.work).join(', ')}), so they show no profit or loss. Ask the administrator to add them under Manpower → Labour norms.
+              </p>
+            ))}
+            {result.sheets.length > 1 && (
+              <div className="rounded-lg border border-brand-200 bg-brand-50/40 p-3 text-sm">
+                <p className="font-medium">This file has {result.sheets.length} sheets: {result.sheets.map((s) => s.sheet).join(', ')}</p>
+                <ul className="mt-1 text-xs">
+                  {result.sheets.map((s) => (
+                    <li key={s.sheet}>
+                      {s.sheet} → {s.project ? <strong>{s.project.name}</strong> : <span className="text-red-600">no project of yours is named like this sheet</span>}
+                      {s.project && ` · ${s.newDays ? `${s.newDays} new day(s)` : 'all days already saved'}`}
+                    </li>
+                  ))}
+                </ul>
+                <Button size="sm" className="mt-2" disabled={!routedDays} loading={m.isPending} onClick={() => m.mutate({ f: file, extra: { saveAllSheets: 'true' } })}>
+                  {routedDays ? `Save all ${routed.length} sheet(s) to their projects (${routedDays} day(s))` : 'Nothing new to save'}
+                </Button>
+              </div>
+            )}
             <ul className="space-y-3">
               {ordered.map((sh) => {
                 const days = sh.dates.length;
                 const newDays = sh.dates.filter((d) => !d.existing).length;
+                const elsewhere = sh.project && !sh.matchesProject;
                 return (
                   <li key={sh.sheet} className={cx('rounded-lg border p-3', sh.sheet === result.preferred ? 'border-brand-300 bg-brand-50/40' : 'border-line')}>
                     <div className="flex flex-wrap items-center justify-between gap-2">
-                      <p className="font-medium">{sh.sheet}{sh.sheet === result.preferred && <span className="ml-2 text-xs font-normal text-muted">matches this project</span>}</p>
+                      <p className="font-medium">
+                        {sh.sheet}
+                        {sh.matchesProject ? <span className="ml-2 text-xs font-normal text-muted">matches this project</span> : elsewhere ? <span className="ml-2 text-xs font-normal text-muted">for {sh.project!.name}</span> : null}
+                      </p>
                       <span className="text-xs text-muted">{days > 1 ? `${days} days: ${sh.dates.map((d) => formatDate(d.date, { day: '2-digit', month: 'short' })).join(', ')}` : `${sh.gangs.length} rows`}</span>
                     </div>
                     <div className="mt-2 flex flex-wrap gap-2">
-                      <Button size="sm" variant="outline" disabled={!sh.gangs.length} onClick={() => use(sh)}>
-                        {sh.gangs.length ? `Fill ${formatDate(date, { day: '2-digit', month: 'short' })} (${sh.gangs.length} rows)` : `No rows for ${formatDate(date, { day: '2-digit', month: 'short' })}`}
-                      </Button>
-                      {days > 1 && (
+                      {!elsewhere && (
+                        <Button size="sm" variant="outline" disabled={!sh.gangs.length} onClick={() => use(sh)}>
+                          {sh.gangs.length ? `Fill ${formatDate(date, { day: '2-digit', month: 'short' })} (${sh.gangs.length} rows)` : `No rows for ${formatDate(date, { day: '2-digit', month: 'short' })}`}
+                        </Button>
+                      )}
+                      {days > 1 && !elsewhere && (
                         <Button size="sm" disabled={!newDays} loading={m.isPending} onClick={() => m.mutate({ f: file, extra: { saveAll: 'true', sheet: sh.sheet } })}>
                           {newDays ? `Save all ${newDays} day(s)` : 'All days already saved'}
                         </Button>
                       )}
+                      {elsewhere && <span className="text-xs text-muted">Saved to {sh.project!.name} with “Save all sheets”, or open that project to fill it.</span>}
                     </div>
                     {days > 1 && newDays < days && <p className="mt-1 text-xs text-muted">{days - newDays} day(s) already have a report and will be left as they are.</p>}
                   </li>
@@ -435,6 +546,19 @@ function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted
   const reader = usePhotoReader(projectId, 'evening', (ex, photo) => onEdit('evening', mergeEvening(report.gangs.map(fromGang), ex), photo, ex.unreadable));
   const excel = useExcelReader(projectId, report.date.slice(0, 10), (drafts, stage, notes) => onEdit(stage, drafts, undefined, notes));
   const del = useMutation({ mutationFn: (reason: string) => fetch(api.url(`/projects/${projectId}/labour-reports/${report.id}`), { method: 'DELETE', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'toprock' }, body: JSON.stringify({ reason }) }).then(async (r) => { if (!r.ok) throw new Error((await r.json()).error?.message ?? 'Could not delete'); }), onSuccess: () => { toast.success('Report deleted'); onDeleted(); }, onError: (e: Error) => toast.error(e.message) });
+  const qc = useQueryClient();
+  const unnormed = report.gangs.filter((g) => g.doneQty && !g.norm);
+  // Saving the gangs again lets the server pick the norm each work's name describes.
+  const measure = useMutation({
+    mutationFn: () => api.put<Report>(`/projects/${projectId}/labour-reports/${report.id}`, { status: report.status, remarks: report.remarks, expectedUpdatedAt: report.updatedAt, gangs: report.gangs.map((g) => ({ work: g.work, workers: g.workers, masons: Number(g.masons), helpers: Number(g.helpers), normId: g.normId, doneQty: g.doneQty, unit: g.unit, normId2: g.normId2, doneQty2: g.doneQty2, unit2: g.unit2, progress: g.progress, outcome: g.outcome })) }),
+    onSuccess: (r) => {
+      const left = r.gangs.filter((g) => g.doneQty && !g.norm).length;
+      if (left === unnormed.length) toast.error('No norm describes these works. Add one under Manpower → Labour norms, or choose it in the evening update.');
+      else toast.success(`${unnormed.length - left} work(s) measured${left ? `; ${left} still need a norm` : ''}`);
+      void qc.invalidateQueries({ queryKey: ['p'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
   const photos = useQuery({ queryKey: ['p', 'dlr-photos', report.id], queryFn: () => api.get<Array<{ id: string; label: string; fileId: string; createdAt: string }>>(`/projects/${projectId}/attachments`, { entityType: 'dailyLabourReport', entityId: report.id }) });
   return (
     <div className="space-y-4">
@@ -460,6 +584,17 @@ function ReportView({ report, projectId, manage, aiConfigured, onEdit, onDeleted
         )}
       </div>
       <SummaryTiles s={report.summary} />
+      {unnormed.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p>{unnormed.map((g) => g.work).join(', ')}: quantity entered but no per-day norm, so no profit or loss is shown for it.</p>
+          {manage && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <Button size="sm" loading={measure.isPending} onClick={() => measure.mutate()}>Measure with standard per-day norms</Button>
+              <span className="text-xs">Matches each work to your norms, then the standard library (Manpower → Labour norms). Works that still do not match need a norm chosen in “Edit evening update”.</span>
+            </div>
+          )}
+        </div>
+      )}
       <Card title="Work and labour check" bodyClassName="p-0">
         <div className="divide-y divide-line md:hidden">
           {report.gangs.map((g) => (

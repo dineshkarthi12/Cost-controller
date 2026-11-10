@@ -139,7 +139,7 @@ function buildListWhere(def: ResourceDef, scope: Scope, query: Request['query'])
 export async function listResource(ctx: AccessContext, def: ResourceDef, scope: Scope, query: Request['query']) {
   assertCan(ctx, `${def.area}.view`, scope.projectId);
   const page = Math.max(1, Number(query.page ?? 1) || 1);
-  const pageSize = Math.min(200, Math.max(1, Number(query.pageSize ?? 25) || 25));
+  const pageSize = Math.min(1000, Math.max(1, Number(query.pageSize ?? def.pageSize ?? 25) || 25));
   const sortable = new Set(def.fields.filter((f) => f.sortable || f.list).map((f) => f.name).concat(['createdAt', 'updatedAt']));
   const sortField = typeof query.sort === 'string' && sortable.has(query.sort) ? query.sort : (def.defaultSort?.field ?? 'createdAt');
   const dir = query.dir === 'asc' || query.dir === 'desc' ? query.dir : (def.defaultSort?.dir ?? 'desc');

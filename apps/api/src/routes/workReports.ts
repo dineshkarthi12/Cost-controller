@@ -5,7 +5,7 @@ import { WORK_CATEGORIES, WORK_ITEM_STATUSES, planCompletion, type WorkCategory 
 import { prisma, transaction } from '../lib/prisma.js';
 import { param, parseBody } from '../lib/http.js';
 import { conflict, forbidden, notFound, validationError } from '../lib/errors.js';
-import { addDays, isoDate, toDateOnly, today } from '../lib/dates.js';
+import { addDays, isoDate, toDateOnly, today, tzOffsetMinutes } from '../lib/dates.js';
 import { ctxOf } from '../middleware/auth.js';
 import { can, type AccessContext } from '../services/access.js';
 import { audit } from '../services/audit.js';
@@ -47,13 +47,6 @@ async function teamMembers(orgId: string) {
     select: { id: true, name: true, designation: true, reportingManagerId: true },
     orderBy: { name: 'asc' },
   });
-}
-
-/** Offset of the organisation's time zone from UTC on a date, in minutes (e.g. +330 for India). */
-function tzOffsetMinutes(tz: string, at: Date) {
-  const local = new Date(at.toLocaleString('en-US', { timeZone: tz }));
-  const utc = new Date(at.toLocaleString('en-US', { timeZone: 'UTC' }));
-  return Math.round((local.getTime() - utc.getTime()) / 60000);
 }
 
 const ACTIVITY: Record<string, { label: string; category: WorkCategory }> = {

@@ -19,6 +19,23 @@ export const orgSettingsSchema = z.object({
   // Daily labour report day rates (defaults from TOPROCK's productivity workbook); each report keeps the rates it was created with.
   masonDayRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default('1300'),
   helperDayRate: z.string().regex(/^\d+(\.\d{1,2})?$/).default('1000'),
+  /** People reports are sent to on WhatsApp in one click (e.g. the Executive Director). */
+  whatsappContacts: z
+    .array(
+      z.object({
+        name: z.string().trim().min(1, 'Enter a name').max(80),
+        role: z.string().trim().max(80).default(''),
+        phone: z.string().trim().regex(/^\+?[\d\s()-]{8,20}$/, 'Enter a mobile number with country code, e.g. +91 98765 43210'),
+        email: z.union([z.literal(''), z.string().trim().email('Enter a valid email')]).default(''),
+        /** Gets the end-of-day pack. */
+        dailyPack: z.boolean().default(true),
+      }),
+    )
+    .max(20)
+    .default([]),
+  /** End-of-day pack: sent (or, without the WhatsApp Business API, prepared with a reminder) at this local time. */
+  dailyPackAuto: z.boolean().default(false),
+  dailyPackTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM, e.g. 18:30').default('18:30'),
 });
 
 export type OrgSettings = z.infer<typeof orgSettingsSchema>;

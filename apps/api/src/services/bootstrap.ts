@@ -1,4 +1,5 @@
 import { ALL_PERMISSIONS, DEFAULT_DOC_TYPES, DEFAULT_ROLES, permissionLabel } from '@toprock/shared';
+import { ensureStandardNorms } from './standardNorms.js';
 import type { Db } from '../lib/prisma.js';
 import { orgSettingsSchema } from './settings.js';
 
@@ -136,5 +137,6 @@ export async function bootstrapOrganisation(db: Db, args: { code: string; name: 
       },
     });
   }
+  await ensureStandardNorms(db, org.id);
   return org;
 }

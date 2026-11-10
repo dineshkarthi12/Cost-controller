@@ -2,9 +2,11 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useForm, useFieldArray, Controller, type UseFormReturn } from 'react-hook-form';
 import { useBlocker } from 'react-router';
 import Decimal from 'decimal.js';
-import { AlertCircle, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { AlertCircle, FileSpreadsheet, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { buildObjectSchema, humanize, type FieldDef, type ResourceDef } from '@toprock/shared';
-import { ApiError } from '../../lib/api';
+import { api, ApiError } from '../../lib/api';
+import { useProjectId } from '../../lib/auth';
 import { useFormDraft, clearDraft } from '../../lib/drafts';
 import { formatMoney } from '../../lib/format';
 import { Button, Checkbox, Field, Input, Select, Textarea, cx, ConfirmDialog } from '../ui';
@@ -163,8 +165,51 @@ function linePreview(row: Record<string, unknown>): string | null {
   return null;
 }
 
-function LinesEditor({ f, form, errors, disabled, refParams }: { f: FieldDef; form: UseFormReturn<Values>; errors: Record<string, string>; disabled?: boolean; refParams?: (lineField: string, row: Record<string, unknown>) => Record<string, string | undefined> | undefined }) {
-  const { fields, append, remove } = useFieldArray({ control: form.control, name: f.name as never });
+interface ReadLines {
+  sheet: string;
+  headerRow: number;
+  columns: Record<string, string>;
+  lines: Array<{ row: number; values: Record<string, unknown>; _labels: Record<string, string>; problems: string[] }>;
+  skipped: Array<{ row: number; reason: string }>;
+  rowsInFile: number;
+}
+
+/** "Fill from Excel": every row of the sheet becomes a line, in the file's order; nothing is saved until the form is. */
+function ExcelLines({ resourceKey, f, onLines }: { resourceKey: string; f: FieldDef; onLines: (rows: Record<string, unknown>[], result: ReadLines) => void }) {
+  const input = useRef<HTMLInputElement>(null);
+  const projectId = useProjectId();
+  const [busy, setBusy] = useState(false);
+  const read = async (file: File) => {
+    const form = new FormData();
+    form.append('resource', resourceKey);
+    form.append('field', f.name);
+    if (projectId) form.append('projectId', projectId);
+    form.append('file', file);
+    setBusy(true);
+    try {
+      const r = await api.upload<ReadLines>('/imports/lines', form);
+      onLines(r.lines.map((l) => ({ ...toUiRow(f.lines ?? [], l.values), _labels: l._labels, _row: l.row, _problems: l.problems })), r);
+      const issues = r.lines.filter((l) => l.problems.length).length;
+      toast.success(`${r.lines.length} line(s) read from “${r.sheet}”, in the file's order${r.skipped.length ? `; ${r.skipped.length} total/blank row(s) left out` : ''}${issues ? `. ${issues} line(s) need checking (marked in amber).` : '.'}`);
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <>
+      <input ref={input} type="file" hidden accept=".xlsx,.csv" aria-label={`${f.label} Excel file`} onChange={(e) => { const file = e.target.files?.[0]; e.target.value = ''; if (file) void read(file); }} />
+      <Button type="button" variant="outline" size="sm" icon={<FileSpreadsheet className="h-4 w-4" />} loading={busy} onClick={() => input.current?.click()}>
+        Fill from Excel
+      </Button>
+    </>
+  );
+}
+
+function LinesEditor({ f, form, errors, disabled, refParams, resourceKey }: { f: FieldDef; form: UseFormReturn<Values>; errors: Record<string, string>; disabled?: boolean; refParams?: (lineField: string, row: Record<string, unknown>) => Record<string, string | undefined> | undefined; resourceKey?: string }) {
+  const { fields, append, remove, replace } = useFieldArray({ control: form.control, name: f.name as never });
+  const [excel, setExcel] = useState<ReadLines | null>(null);
   const lineFields = (f.lines ?? []).filter((x) => !x.hideInForm);
   const editable = lineFields.filter((x) => !x.readOnly);
   const readOnly = lineFields.filter((x) => x.readOnly);
@@ -175,12 +220,15 @@ function LinesEditor({ f, form, errors, disabled, refParams }: { f: FieldDef; fo
         const row = rows?.[idx] ?? {};
         const labels = (row._labels as Record<string, string> | undefined) ?? {};
         const preview = linePreview(row);
+        const problems = (row._problems as string[] | undefined) ?? [];
         return (
-          <div key={item.id} className="rounded-lg border border-line bg-slate-50/60 p-3">
+          <div key={item.id} className={cx('rounded-lg border p-3', problems.length ? 'border-amber-300 bg-amber-50/60' : 'border-line bg-slate-50/60')}>
             <div className="mb-2 flex items-center justify-between">
               <span className="text-xs font-semibold text-muted">
                 {f.label} line {idx + 1}
+                {row._row !== undefined && <span className="ml-1 font-normal">(Excel row {String(row._row)})</span>}
                 {preview && <span className="ml-2 font-normal text-ink">≈ {preview}</span>}
+                {problems.length > 0 && <span className="ml-2 font-normal text-amber-800">{problems.join(' · ')}</span>}
               </span>
               {!disabled && fields.length > (f.required ? 1 : 0) && (
                 <button type="button" onClick={() => remove(idx)} className="inline-flex items-center gap-1 rounded px-2 py-1 text-xs text-red-600 hover:bg-red-50" aria-label={`Remove line ${idx + 1}`}>
@@ -241,9 +289,30 @@ function LinesEditor({ f, form, errors, disabled, refParams }: { f: FieldDef; fo
         );
       })}
       {!disabled && (
-        <Button type="button" variant="secondary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => append(toUiRow(f.lines ?? [], {}) as never)}>
-          Add {f.label.toLowerCase()} line
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="secondary" size="sm" icon={<Plus className="h-4 w-4" />} onClick={() => append(toUiRow(f.lines ?? [], {}) as never)}>
+            Add {f.label.toLowerCase()} line
+          </Button>
+          {resourceKey && (
+            <ExcelLines
+              resourceKey={resourceKey}
+              f={f}
+              onLines={(newRows, r) => {
+                // Replace the empty starting line; otherwise add after the lines already entered.
+                const current = (form.getValues(f.name) as Record<string, unknown>[] | undefined) ?? [];
+                const blank = current.every((x) => (f.lines ?? []).every((lf) => lf.readOnly || x[lf.name] === '' || x[lf.name] === undefined || x[lf.name] === null || x[lf.name] === lf.default || (lf.type === 'percent' && x[lf.name] === pctToUi(lf.default))));
+                replace((blank ? newRows : [...current, ...newRows]) as never);
+                setExcel(r);
+              }}
+            />
+          )}
+        </div>
+      )}
+      {excel && (
+        <p className="rounded-lg border border-line bg-white p-2 text-xs text-muted">
+          From “{excel.sheet}” (headers on row {excel.headerRow}): {excel.lines.length} line(s) read, rows {excel.lines[0]?.row}–{excel.lines[excel.lines.length - 1]?.row}. Columns used: {Object.entries(excel.columns).map(([k, h]) => `${(f.lines ?? []).find((x) => x.name === k)?.label ?? k} ← “${h}”`).join(', ')}.
+          {excel.skipped.length > 0 && <> Left out: {excel.skipped.map((x) => `row ${x.row} (${x.reason})`).join(', ')}.</>}
+        </p>
       )}
       {errors[f.name] && <p className="text-xs text-red-600">{errors[f.name]}</p>}
     </div>
@@ -381,7 +450,7 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
         section.startsWith('__lines_') ? (
           <fieldset key={section}>
             <legend className="mb-3 text-sm font-semibold text-ink">{fs[0].label}</legend>
-            <LinesEditor f={fs[0]} form={form} errors={errors} refParams={refParams ? (lf, row) => refParams(lf, row, values) : undefined} />
+            <LinesEditor f={fs[0]} form={form} errors={errors} resourceKey={def.key} refParams={refParams ? (lf, row) => refParams(lf, row, values) : undefined} />
           </fieldset>
         ) : (
           <fieldset key={section}>

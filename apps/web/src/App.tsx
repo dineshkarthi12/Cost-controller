@@ -21,6 +21,8 @@ import { AttendancePage, EquipmentUtilisation, ProgressPage, SchedulePage, Verif
 import { DailyLabourPage, LabourSummaryPage } from './features/site/LabourReportPages';
 import { ImportButton } from './features/admin/ImportDialog';
 import { MaterialPresetButton } from './features/materials/MaterialPresets';
+import { BoqSheet } from './features/commercial/BoqSheet';
+import { DailyPackPage } from './features/share/DailyPackPage';
 import { BomPage } from './features/commercial/BomPage';
 import { MyWorkReportPage, TeamWorkReportsPage, WorkReportSummaryPage } from './features/tasks/WorkReportPages';
 import { AuditPage, IntegrationsPage, SettingsPage, UsersPage } from './features/admin/AdminPages';
@@ -50,7 +52,7 @@ const MODULE_TABS: Record<string, TabDef[]> = {
   schedule: [T('Gantt & look-ahead', '/schedule', undefined, { element: <SchedulePage /> }), T('Activities', '/schedule/activities', 'activities')],
   equipment: [T('Equipment register', '/equipment', 'equipment'), T('Daily logs', '/equipment/logs', 'equipmentLogs'), T('Maintenance', '/equipment/maintenance', 'equipmentMaintenance'), T('Utilisation', '/equipment/utilisation', undefined, { element: <EquipmentUtilisation /> })],
   costcodes: [T('Cost codes', '/cost-codes', 'costCodes', { listProps: { actions: <ImportButton kind="COST_CODES" /> } }), T('WBS', '/cost-codes/wbs', 'wbsNodes')],
-  boq: [T('BOQ items', '/boq', 'boqItems', { listProps: { actions: <ImportButton kind="BOQ" /> } }), T('BOM', '/boq/bom', undefined, { element: <BomPage /> })],
+  boq: [T('BOQ items', '/boq', 'boqItems', { listProps: { actions: <ImportButton kind="BOQ" />, altView: { label: 'Excel view', element: <BoqSheet /> } } }), T('BOM', '/boq/bom', undefined, { element: <BomPage /> })],
   takeoff: [T('Quantity takeoff', '/takeoff', 'takeoffs')],
   measurements: [T('Measurement book', '/measurements', 'measurements')],
   verification: [T('Verification queue', '/measurement-verification', undefined, { element: <VerificationQueuePage /> })],
@@ -91,6 +93,7 @@ const MODULE_TABS: Record<string, TabDef[]> = {
   documents: [T('Document register', '/documents', 'documents')],
   transmittals: [T('Transmittals', '/transmittals', 'transmittals'), T('RFIs & technical queries', '/transmittals/rfis', 'rfis')],
   tasks: [T('Tasks', '/tasks', 'tasks', { element: <TasksPage /> })],
+  dailypack: [T('Daily send', '/daily-pack', undefined, { element: <DailyPackPage /> })],
   workreports: [
     T('My report', '/work-reports', undefined, { element: <MyWorkReportPage />, anyOf: ['workreport.submit'] }),
     T('Team reports', '/work-reports/team', undefined, { element: <TeamWorkReportsPage />, anyOf: ['workreport.review'] }),

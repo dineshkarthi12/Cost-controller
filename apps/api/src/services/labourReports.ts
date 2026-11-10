@@ -11,6 +11,8 @@ import type { Db, Tx } from '../lib/prisma.js';
 import { validationError } from '../lib/errors.js';
 import { addDays, isoDate, toDateOnly, today } from '../lib/dates.js';
 import { getOrgSettings } from './settings.js';
+import { normByName } from './labourExcelImport.js';
+import { ensureStandardNorms } from './standardNorms.js';
 
 const zQty = z.union([z.number(), z.string().trim().regex(/^\d+(\.\d{1,4})?$/, 'Enter a number')]).nullable().optional();
 
@@ -51,6 +53,12 @@ const hasValue = (v: unknown) => v !== null && v !== undefined && String(v) !== 
 
 /** Validates norms, fills units and computes every gang's productivity and the day's totals. */
 export async function prepareGangs(tx: Tx, orgId: string, gangs: GangInput[], rates: { masonRate: unknown; helperRate: unknown }) {
+  // Work with a quantity but no norm chosen: use the norm its name describes (own norms first, then the standard library).
+  if (gangs.some((g) => !g.normId && hasValue(g.doneQty))) {
+    await ensureStandardNorms(tx, orgId);
+    const all = await tx.labourNorm.findMany({ where: { orgId, active: true } });
+    gangs = gangs.map((g) => (g.normId || !hasValue(g.doneQty) ? g : { ...g, normId: normByName(g.work, g.unit || null, all)?.id ?? null }));
+  }
   const normIds = [...new Set(gangs.flatMap((g) => [g.normId, g.normId2]).filter((x): x is string => !!x))];
   const norms = new Map((await tx.labourNorm.findMany({ where: { orgId, id: { in: normIds } } })).map((n) => [n.id, n]));
   const errors: string[] = [];

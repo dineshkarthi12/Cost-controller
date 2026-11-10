@@ -96,6 +96,7 @@ export function DashboardPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Date range for trends">
+          <Link to="/daily-pack" className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#128C7E] px-3.5 text-sm font-medium text-white hover:bg-[#0f7a6e]">Daily send (WhatsApp) <ArrowRight className="h-4 w-4" /></Link>
           <Input type="date" className="w-auto" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} aria-label="Trend from" />
           <span className="text-xs text-muted">to</span>
           <Input type="date" className="w-auto" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} aria-label="Trend to" />
