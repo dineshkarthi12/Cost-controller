@@ -39,6 +39,16 @@ describe('material preset list', () => {
     expect(again.created).toEqual([]);
   });
 
+  it('adds the whole list at once ("Select all"), skipping only the ones already there', async () => {
+    const before = await prisma.material.count({ where: { orgId: w.org.id } });
+    const r = await w.c.admin.ok.post('/material-presets', { items: MATERIAL_PRESETS.map((m) => ({ code: m.code })) });
+    expect(r.created.length + r.skipped.length).toBe(MATERIAL_PRESETS.length);
+    expect(r.skipped.map((s: any) => s.code).sort()).toEqual(['AGG-MSAND', 'CEM-OPC53', 'STL-TMT12']);
+    expect(await prisma.material.count({ where: { orgId: w.org.id } })).toBe(before + r.created.length);
+    const rows = await w.c.admin.ok.get('/material-presets');
+    expect(rows.every((x: any) => x.exists)).toBe(true);
+  });
+
   it('refuses codes that are not presets, bad rates, and users without material.manage', async () => {
     expect((await w.c.admin.post('/material-presets', { items: [{ code: 'NOT-A-PRESET' }] })).status).toBe(422);
     expect((await w.c.admin.post('/material-presets', { items: [{ code: 'AGG-20MM', standardRate: 'abc' }] })).status).toBe(422);

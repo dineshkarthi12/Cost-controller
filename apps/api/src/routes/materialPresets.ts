@@ -50,22 +50,25 @@ materialPresetsRouter.post('/', async (req, res) => {
     const names = new Set(rows.map((r) => norm(r.name)));
     const created: string[] = [];
     const skipped: Array<{ code: string; reason: string }> = [];
+    const data: Array<{ orgId: string; code: string; name: string; category: string; unit: string; specification: string | null; standardRate: string | null; reorderLevel: string | null }> = [];
     for (const i of items) {
       const m = byCode.get(i.code)!;
       if (codes.has(norm(m.code)) || names.has(norm(m.name))) {
         skipped.push({ code: m.code, reason: 'Already in the material list' });
         continue;
       }
-      // The unit list starts with these units, but an administrator may have removed one.
-      const uom = DEFAULT_UOMS.find(([c]) => c === m.unit);
-      if (uom) await tx.uom.upsert({ where: { orgId_code: { orgId: ctx.orgId, code: uom[0] } }, create: { orgId: ctx.orgId, code: uom[0], name: uom[1], dimension: uom[2] }, update: {} });
-      await tx.material.create({
-        data: { orgId: ctx.orgId, code: m.code, name: m.name, category: m.category, unit: m.unit, specification: m.specification ?? null, standardRate: i.standardRate || null, reorderLevel: i.reorderLevel || null },
-      });
+      data.push({ orgId: ctx.orgId, code: m.code, name: m.name, category: m.category, unit: m.unit, specification: m.specification ?? null, standardRate: i.standardRate || null, reorderLevel: i.reorderLevel || null });
       codes.add(norm(m.code));
       names.add(norm(m.name));
       created.push(m.code);
     }
+    // The unit list starts with these units, but an administrator may have removed one.
+    // One write per unit and one for all materials, so several hundred presets stay well inside the transaction timeout.
+    for (const unit of new Set(data.map((d) => d.unit))) {
+      const uom = DEFAULT_UOMS.find(([c]) => c === unit);
+      if (uom) await tx.uom.upsert({ where: { orgId_code: { orgId: ctx.orgId, code: uom[0] } }, create: { orgId: ctx.orgId, code: uom[0], name: uom[1], dimension: uom[2] }, update: {} });
+    }
+    if (data.length) await tx.material.createMany({ data });
     if (created.length) await audit(tx, ctx, { action: 'CREATE', entityType: 'material', summary: `${created.length} material(s) added from the preset list: ${created.join(', ')}` });
     return { created, skipped };
   });

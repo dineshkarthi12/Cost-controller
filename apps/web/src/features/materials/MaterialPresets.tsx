@@ -62,6 +62,8 @@ export function MaterialPresetDialog({ open, onOpenChange }: { open: boolean; on
   const toggleGroup = (items: Row[], on: boolean) => {
     for (const r of items) if (!r.exists) toggle(r, on);
   };
+  const visibleAddable = visible.filter((r) => !r.exists);
+  const allVisibleOn = visibleAddable.length > 0 && visibleAddable.every((r) => picked[r.code]);
 
   const add = useMutation({
     mutationFn: () => api.post<{ created: string[]; skipped: Array<{ code: string; reason: string }> }>('/material-presets', { items: Object.entries(picked).map(([code, v]) => ({ code, standardRate: v.standardRate })) }),
@@ -101,6 +103,16 @@ export function MaterialPresetDialog({ open, onOpenChange }: { open: boolean; on
         </div>
         <Select aria-label="Category" className="sm:w-60" options={categories.map((c) => ({ value: c, label: c }))} placeholder="All categories" value={category} onChange={(e) => setCategory(e.target.value)} />
       </div>
+      {!q.isLoading && visibleAddable.length > 0 && (
+        <div className="mb-3 flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-50 px-3 py-2 text-sm">
+          <span className="text-muted">
+            Showing {visible.length} of {rows.length} materials · {rows.length - rows.filter((r) => !r.exists).length} already added
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => toggleGroup(visibleAddable, !allVisibleOn)}>
+            {allVisibleOn ? 'Clear selection' : `Select all ${visibleAddable.length} shown`}
+          </Button>
+        </div>
+      )}
       {q.isLoading ? (
         <LoadingBlock rows={6} />
       ) : groups.length === 0 ? (
