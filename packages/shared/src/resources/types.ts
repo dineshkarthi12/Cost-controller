@@ -71,6 +71,8 @@ export interface FieldDef {
   /** Only editable on create. */
   createOnly?: boolean;
   hideInForm?: boolean;
+  /** Text fields: values offered in a drop-down while typing; any other value can still be typed. */
+  suggestions?: readonly string[];
 }
 
 export interface ResourceDef {
@@ -100,6 +102,11 @@ export interface ResourceDef {
   /** Field holding the user who created the record. */
   creatorField?: string;
   description?: string;
+  /**
+   * Ready-made records: when the `from` field is set to an item's value (e.g. a material name picked
+   * from the suggestions), the form fills the item's other fields that are still empty.
+   */
+  autofill?: { from: string; items: readonly object[] };
 }
 
 export const DEFAULT_EDITABLE = ['DRAFT', 'RETURNED'] as const;

@@ -1,4 +1,5 @@
 import type { ResourceDef } from './types.js';
+import { MATERIAL_CATEGORIES, MATERIAL_PRESETS } from '../catalogues/materials.js';
 
 export const PARTY_KINDS = ['CLIENT', 'CONSULTANT', 'SUPPLIER', 'SUBCONTRACTOR'] as const;
 
@@ -62,10 +63,11 @@ export const materials: ResourceDef = {
   titleField: 'name',
   defaultSort: { field: 'code', dir: 'asc' },
   searchFields: ['code', 'name', 'category', 'specification'],
+  autofill: { from: 'name', items: MATERIAL_PRESETS },
   fields: [
     { name: 'code', label: 'Code', type: 'text', required: true, list: true, sortable: true },
-    { name: 'name', label: 'Name', type: 'text', required: true, list: true, sortable: true, span: 2 },
-    { name: 'category', label: 'Category', type: 'text', required: true, list: true, filter: true },
+    { name: 'name', label: 'Name', type: 'text', required: true, list: true, sortable: true, span: 2, suggestions: MATERIAL_PRESETS.map((m) => m.name), help: 'Pick from the list to fill code, category, unit and specification, or type your own.' },
+    { name: 'category', label: 'Category', type: 'text', required: true, list: true, filter: true, suggestions: MATERIAL_CATEGORIES },
     { name: 'unit', label: 'Unit', type: 'ref', ref: 'uoms', required: true, list: true },
     { name: 'specification', label: 'Specification', type: 'textarea', span: 3 },
     { name: 'reorderLevel', label: 'Reorder level', type: 'decimal', min: 0, list: true },

@@ -20,6 +20,7 @@ import { ClientBillDetail, ClientBillingPage, ContractorBillDetail, ContractorBi
 import { AttendancePage, EquipmentUtilisation, ProgressPage, SchedulePage, VerificationQueuePage } from './features/site/SitePages';
 import { DailyLabourPage, LabourSummaryPage } from './features/site/LabourReportPages';
 import { ImportButton } from './features/admin/ImportDialog';
+import { MaterialPresetButton } from './features/materials/MaterialPresets';
 import { BomPage } from './features/commercial/BomPage';
 import { MyWorkReportPage, TeamWorkReportsPage, WorkReportSummaryPage } from './features/tasks/WorkReportPages';
 import { AuditPage, IntegrationsPage, SettingsPage, UsersPage } from './features/admin/AdminPages';
@@ -54,7 +55,7 @@ const MODULE_TABS: Record<string, TabDef[]> = {
   measurements: [T('Measurement book', '/measurements', 'measurements')],
   verification: [T('Verification queue', '/measurement-verification', undefined, { element: <VerificationQueuePage /> })],
   materials: [
-    T('Materials', '/materials', 'materials', { listProps: { actions: <ImportButton kind="MATERIALS" /> } }),
+    T('Materials', '/materials', 'materials', { listProps: { actions: <><MaterialPresetButton /><ImportButton kind="MATERIALS" /></> } }),
     T('Units', '/materials/units', 'uoms'),
     T('Stores', '/materials/stores', 'stores'),
     T('Suppliers & parties', '/materials/parties', 'parties', { listProps: { actions: <ImportButton kind="SUPPLIERS" /> } }),

@@ -310,12 +310,15 @@ function MobileBottomNav({ onMore }: { onMore: () => void }) {
 }
 
 /** Routes that work without a current project. Everything else needs one. */
-const PROJECTLESS = ['/', '/projects', '/account', '/notifications', '/approvals', '/admin'];
+const PROJECTLESS = ['/', '/projects', '/account', '/notifications', '/approvals', '/admin', '/materials'];
+/** Under a projectless prefix but still project data. Materials, units and parties are organisation-wide, and the client must exist before the first project. */
+const NEEDS_PROJECT = ['/materials/stores'];
 
 function ProjectGate({ children }: { children: ReactNode }) {
   const { me, projectId } = useAuth();
   const { pathname } = useLocation();
-  const free = PROJECTLESS.some((p) => (p === '/' ? pathname === '/' : pathname === p || pathname.startsWith(`${p}/`)));
+  const under = (p: string) => (p === '/' ? pathname === '/' : pathname === p || pathname.startsWith(`${p}/`));
+  const free = PROJECTLESS.some(under) && !NEEDS_PROJECT.some(under);
   if (free || projectId || !me) return <>{children}</>;
   return (
     <Page>

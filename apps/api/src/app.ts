@@ -31,6 +31,7 @@ import { adminRouter } from './routes/admin.js';
 import { reportsRouter, portfolioRouter } from './routes/reports.js';
 import { searchRouter } from './routes/search.js';
 import { importsRouter } from './routes/imports.js';
+import { materialPresetsRouter } from './routes/materialPresets.js';
 import { manpowerRouter } from './routes/manpower.js';
 import { scheduleRouter } from './routes/schedule.js';
 import { qualityRouter } from './routes/quality.js';
@@ -110,6 +111,7 @@ export function createApp() {
   api.use('/notifications', notificationsRouter);
   api.use('/admin', adminRouter);
   api.use('/imports', importsRouter);
+  api.use('/material-presets', materialPresetsRouter);
   api.use('/search', searchRouter);
   api.post('/system/run-jobs', async (req, res) => {
     assertCan(ctxOf(req), 'settings.manage');

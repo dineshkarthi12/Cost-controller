@@ -36,7 +36,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 | 15 | Quantity Takeoff | Working | Takeoff sheets with formulae | — |
 | 16 | Measurement Book | Working · tested | MB/JMR, dimension formulae, duplicate detection with reason, certification workflow | — |
 | 17 | Measurement Verification | Working · tested | Queue, verify (SoD), variance, return for correction | — |
-| 18 | Material Management | Working | Materials, units, stores, suppliers and parties, imports | — |
+| 18 | Material Management | Working · tested (presets) | Materials, units, stores, suppliers and parties, imports. **Preset list** of about 120 common construction materials (cement, steel, aggregates, RMC, blocks, chemicals, formwork, tiles, paint, plumbing, electrical, doors and windows, consumables, PPE): tick and add many at once with an optional rate, or type a name in New material and pick a suggestion to fill code, category, unit and specification. Anything not in the list can still be typed. Materials, units and parties open before the first project exists | Preset rates are not given (prices vary); enter them per material |
 | 19 | Material Requisition | Working · tested | MR with workflow and its own `requisition` permission | — |
 | 20 | Purchase Requisition | Working | PR from MR, budget check (warn/block setting), workflow | — |
 | 21 | RFQ & Quotations | Working | RFQ from PR, quotations, comparison, award to PO | No automated tests |

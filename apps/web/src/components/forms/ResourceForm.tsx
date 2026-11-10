@@ -95,6 +95,17 @@ export function FieldInput({ f, value, onChange, error, label, refParams, onRefP
       return <TagsInput value={arr} onChange={onChange} disabled={disabled} />;
     }
     default:
+      if (f.suggestions?.length)
+        return (
+          <>
+            <Input {...common} list={`${id}-list`} autoComplete="off" value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder ?? 'Type or pick from the list'} maxLength={f.maxLength ?? 300} />
+            <datalist id={`${id}-list`}>
+              {f.suggestions.map((o) => (
+                <option key={o} value={o} />
+              ))}
+            </datalist>
+          </>
+        );
       return <Input {...common} value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder} maxLength={f.maxLength ?? 300} />;
   }
 }
@@ -266,6 +277,22 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
   const schema = useMemo(() => buildObjectSchema(def.fields, mode), [def, mode]);
   const values = form.watch();
 
+  /** Fills the still-empty fields from a ready-made item whose `from` value matches (see ResourceDef.autofill). */
+  const applyAutofill = (name: string, value: unknown) => {
+    const af = def.autofill;
+    if (!af || af.from !== name || typeof value !== 'string' || !value.trim()) return;
+    const key = value.trim().toLowerCase();
+    const item = af.items.find((it) => String((it as Record<string, unknown>)[af.from] ?? '').toLowerCase() === key) as Record<string, unknown> | undefined;
+    if (!item) return;
+    for (const [k, v] of Object.entries(item)) {
+      if (k === af.from || v === undefined || v === null) continue;
+      const f = def.fields.find((x) => x.name === k && !x.readOnly);
+      if (!f || lockedFields.includes(k)) continue;
+      const cur = form.getValues(k);
+      if (cur === '' || cur === undefined || cur === null) form.setValue(k, toUiValue(f, v), { shouldDirty: true });
+    }
+  };
+
   // onSubmit usually navigates to the saved record before `saved` state updates, so the blocker reads a ref.
   const submittingRef = useRef(false);
   const blocker = useBlocker(({ currentLocation, nextLocation }) => form.formState.isDirty && !saved && !submittingRef.current && currentLocation.pathname !== nextLocation.pathname);
@@ -375,7 +402,7 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
                       </div>
                     ) : (
                       <Field label={f.label} htmlFor={`f-${f.name}`} required={f.required} error={errors[f.name]} help={f.help} className={cx(f.span === 3 && 'sm:col-span-2 lg:col-span-3', f.span === 2 && 'sm:col-span-2', f.type === 'textarea' && !f.span && 'sm:col-span-2 lg:col-span-3')}>
-                        <FieldInput f={f} value={field.value} onChange={field.onChange} error={errors[f.name]} label={(record?._labels as Record<string, string> | undefined)?.[f.name]} disabled={lockedFields.includes(f.name)} refParams={refParams?.(f.name, {}, values)} />
+                        <FieldInput f={f} value={field.value} onChange={(v) => { field.onChange(v); applyAutofill(f.name, v); }} error={errors[f.name]} label={(record?._labels as Record<string, string> | undefined)?.[f.name]} disabled={lockedFields.includes(f.name)} refParams={refParams?.(f.name, {}, values)} />
                       </Field>
                     )
                   }
