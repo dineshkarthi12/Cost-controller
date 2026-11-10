@@ -100,8 +100,9 @@ describe('BOM linked to the material list', () => {
     await w.c.admin.ok.patch(`/org/r/materials/${sand.id}`, { standardRate: '1500' });
     await w.c.admin.ok.patch(`/org/r/materials/${steel.id}`, { standardRate: '65000' });
 
+    // Setting the sand rate priced its linked, unpriced line at once; refresh re-prices the cover block (file rate) and keeps the typed steel rate.
     const r = await w.c.qs.ok.post(`${w.P}/bom/refresh-rates`, {});
-    expect(r).toMatchObject({ updated: 2, keptManual: 1 }); // sand priced, cover block re-priced from file rate; typed steel rate kept
+    expect(r).toMatchObject({ updated: 1, keptManual: 1 });
     bom = await w.c.qs.ok.get(`${w.P}/bom`);
     expect(lineOf(bom, 'M-Sand for concrete')).toMatchObject({ rate: '1500', amount: '7500' });
     expect(lineOf(bom, 'Cover blocks special')).toMatchObject({ rate: '7', rateSource: 'MATERIAL' });
@@ -140,5 +141,37 @@ describe('material-wise cost of the project', () => {
     expect(r.unlinkedBom).toEqual({ lines: 0, amount: '0.00' });
     expect(r.totals.materials).toBe(r.rows.length);
     expect((await w.c.outsider.get(`${w.P}/bom/material-cost`)).status).toBe(404); // not a project member: the project is not visible
+  });
+});
+
+describe('material rates in one place; BOMs follow automatically', () => {
+  it('lists every material with its rates and where it is used in BOMs', async () => {
+    const rows = await w.c.qs.ok.get('/material-rates');
+    const cement = rows.find((r: any) => r.id === w.cement.id);
+    expect(cement).toMatchObject({ unit: 'BAG', bomLines: 1, bomLinesFollowing: 1, projects: [w.project.code] });
+    expect(rows.find((r: any) => r.id === steel.id)).toMatchObject({ bomLines: 1, bomLinesFollowing: 1 });
+  });
+
+  it('changing a rate re-prices BOM lines that take the material rate, not typed ones, and audits it', async () => {
+    let bom = await w.c.qs.ok.get(`${w.P}/bom`);
+    await w.c.qs.ok.patch(`${w.P}/bom/lines/${lineOf(bom, 'TMT steel 12mm').id}`, { rate: '64' });
+    const sandUpd = await w.c.admin.ok.put(`/material-rates/${sand.id}`, { standardRate: '1600' });
+    expect(sandUpd.repriced).toEqual({ lines: 1, projects: 1 });
+    const steelUpd = await w.c.admin.ok.put(`/material-rates/${steel.id}`, { standardRate: '70000' });
+    expect(steelUpd.repriced).toEqual({ lines: 0, projects: 0 });
+    bom = await w.c.qs.ok.get(`${w.P}/bom`);
+    expect(lineOf(bom, 'M-Sand for concrete')).toMatchObject({ rate: '1600', amount: '8000' });
+    expect(lineOf(bom, 'TMT steel 12mm')).toMatchObject({ rate: '64', rateSource: 'MANUAL' });
+    expect(await prisma.auditEvent.count({ where: { projectId: w.project.id, summary: { startsWith: 'BOM re-priced automatically' } } })).toBeGreaterThanOrEqual(1);
+    expect((await w.c.se.put(`/material-rates/${sand.id}`, { standardRate: '1' })).status).toBe(403);
+  });
+
+  it('editing the material on the Materials page, or an approved PO, moves the BOM too', async () => {
+    await w.c.admin.ok.patch(`/org/r/materials/${sand.id}`, { standardRate: '1700' });
+    let bom = await w.c.qs.ok.get(`${w.P}/bom`);
+    expect(lineOf(bom, 'M-Sand for concrete').rate).toBe('1700');
+    await approvedPo(w, { qty: '10', rate: '480' });
+    bom = await w.c.qs.ok.get(`${w.P}/bom`);
+    expect(lineOf(bom, 'Cement')).toMatchObject({ rate: '480', rateSource: 'MATERIAL', amount: '38400' });
   });
 });

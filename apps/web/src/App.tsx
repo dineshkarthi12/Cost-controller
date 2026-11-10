@@ -21,6 +21,7 @@ import { AttendancePage, EquipmentUtilisation, ProgressPage, SchedulePage, Verif
 import { DailyLabourPage, LabourSummaryPage } from './features/site/LabourReportPages';
 import { ImportButton } from './features/admin/ImportDialog';
 import { MaterialPresetButton } from './features/materials/MaterialPresets';
+import { MaterialRatesPage } from './features/materials/MaterialRatesPage';
 import { BoqSheet } from './features/commercial/BoqSheet';
 import { DailyPackPage } from './features/share/DailyPackPage';
 import { BomPage } from './features/commercial/BomPage';
@@ -59,6 +60,7 @@ const MODULE_TABS: Record<string, TabDef[]> = {
   verification: [T('Verification queue', '/measurement-verification', undefined, { element: <VerificationQueuePage /> })],
   materials: [
     T('Materials', '/materials', 'materials', { listProps: { actions: <><MaterialPresetButton /><ImportButton kind="MATERIALS" /></> } }),
+    T('Rates', '/materials/rates', undefined, { element: <MaterialRatesPage /> }),
     T('Units', '/materials/units', 'uoms'),
     T('Stores', '/materials/stores', 'stores'),
     T('Suppliers & parties', '/materials/parties', 'parties', { listProps: { actions: <ImportButton kind="SUPPLIERS" /> } }),

@@ -166,7 +166,7 @@ const po: DocHandler = {
       ctx.user.id,
       lines.map((l) => ({ projectId: e.projectId, costCodeId: l.costCodeId, date: e.orderDate as Date, kind: 'COMMITMENT' as const, amount: l.amount.toString(), sourceType: 'PO', sourceId: e.id, sourceNumber: e.number, partyId: e.supplierId as string, description: l.description })),
     );
-    await refreshMaterialPurchaseRates(tx, ctx.orgId, lines.map((l) => l.materialId as string));
+    await refreshMaterialPurchaseRates(tx, ctx, lines.map((l) => l.materialId as string), `PO ${e.number} approved`);
   },
 };
 
@@ -211,7 +211,7 @@ const poAmendment: DocHandler = {
     });
     await tx.poRevision.update({ where: { id: e.id }, data: { approvedAt: new Date() } });
     const after = await tx.purchaseOrderLine.findMany({ where: { poId: p.id }, select: { materialId: true } });
-    await refreshMaterialPurchaseRates(tx, ctx.orgId, after.map((l) => l.materialId as string));
+    await refreshMaterialPurchaseRates(tx, ctx, after.map((l) => l.materialId as string), `PO ${p.number} amendment approved`);
   },
 };
 

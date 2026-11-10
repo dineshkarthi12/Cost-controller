@@ -10,7 +10,7 @@ import { ctxOf } from '../middleware/auth.js';
 import { assertCan, assertProjectAccess, can } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { readBomWorkbook, type ParsedBomItem } from '../services/bomExcelReader.js';
-import { PURCHASED_PO_STATUSES } from '../services/materialRates.js';
+import { PURCHASED_PO_STATUSES, rateForLine } from '../services/materialRates.js';
 
 /** Bill of materials per BOQ item: import from the estimator's workbook, material summary, rates, export. */
 export const bomRouter = Router({ mergeParams: true });
@@ -32,17 +32,6 @@ async function orgMaterials(db: Db, orgId: string): Promise<MaterialForRate[]> {
   return db.material.findMany({ where: { orgId, isActive: true }, select: { id: true, code: true, name: true, unit: true, standardRate: true, lastPurchaseRate: true } });
 }
 
-/**
- * The material's current rate expressed per the BOM line's unit (standard rate, else last purchase rate).
- * A rate per MT on a line in Kg is converted; a line whose unit cannot be converted (Bag vs Kg) gets no rate.
- */
-export function rateForLine(m: Pick<MaterialForRate, 'unit' | 'standardRate' | 'lastPurchaseRate'>, lineUnit: string): { rate: string | null; reason: 'OK' | 'NO_RATE' | 'UNIT' } {
-  const base = m.standardRate ?? m.lastPurchaseRate;
-  if (base === null || base === undefined) return { rate: null, reason: 'NO_RATE' };
-  const f = unitFactor(lineUnit, m.unit); // 1 line unit = f material units
-  if (!f) return { rate: null, reason: 'UNIT' };
-  return { rate: D(base as string).times(f).toDecimalPlaces(4).toString(), reason: 'OK' };
-}
 
 async function loadBom(projectId: string) {
   return prisma.bomItem.findMany({ where: { projectId }, orderBy: { lineNo: 'asc' }, include });

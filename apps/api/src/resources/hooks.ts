@@ -19,6 +19,7 @@ import { getOrgSettings } from '../services/settings.js';
 import { projectStock, stockBalance } from '../services/stock.js';
 import { notify } from '../services/notifications.js';
 import { addDays, toDateOnly } from '../lib/dates.js';
+import { repriceBomForMaterials } from '../services/materialRates.js';
 
 export interface Scope {
   orgId: string;
@@ -42,6 +43,14 @@ async function linesOrExisting(tx: Tx, data: Record<string, any>, existing: Reco
 }
 
 export const HOOKS: Record<string, ResourceHooks> = {
+  materials: {
+    /** A changed rate or unit re-prices every BOM line that takes its rate from this material. */
+    async afterSave(tx, ctx, _scope, rec, existing) {
+      if (!existing) return;
+      const changed = String(existing.standardRate ?? '') !== String(rec.standardRate ?? '') || existing.unit !== rec.unit;
+      if (changed) await repriceBomForMaterials(tx, ctx, [rec.id as string], `rate of ${rec.code} changed`);
+    },
+  },
   manpowerReports: {
     include: { lines: { orderBy: { id: 'asc' } } }, // in the order entered or imported
     async prepare(tx, ctx, scope, data, existing) {
