@@ -11,6 +11,7 @@ import { useFormDraft, clearDraft } from '../../lib/drafts';
 import { formatMoney } from '../../lib/format';
 import { Button, Checkbox, Field, Input, Select, Textarea, cx, ConfirmDialog } from '../ui';
 import { RefSelect, type RefOption } from './RefSelect';
+import { SuggestInput, type Suggestion } from './SuggestInput';
 
 type Values = Record<string, unknown>;
 
@@ -57,7 +58,7 @@ export function defaultValues(def: ResourceDef, record?: Record<string, unknown>
 
 const AUTOFILL_ALIASES: Record<string, string[]> = { standardRate: ['estimatedRate', 'rate'], unitRate: ['rate'], unit: ['unit'], description: ['description'], costCodeId: ['costCodeId'], taxRate: ['taxRate'] };
 
-export function FieldInput({ f, value, onChange, error, label, refParams, onRefPicked, disabled }: { f: FieldDef; value: unknown; onChange: (v: unknown) => void; error?: string; label?: string | null; refParams?: Record<string, string | undefined>; onRefPicked?: (o?: RefOption) => void; disabled?: boolean }) {
+export function FieldInput({ f, value, onChange, error, label, refParams, onRefPicked, disabled, suggestionItems }: { f: FieldDef; value: unknown; onChange: (v: unknown) => void; error?: string; label?: string | null; refParams?: Record<string, string | undefined>; onRefPicked?: (o?: RefOption) => void; disabled?: boolean; suggestionItems?: Suggestion[] }) {
   const id = `f-${f.name}`;
   const common = { id, disabled, invalid: !!error };
   switch (f.type) {
@@ -97,17 +98,8 @@ export function FieldInput({ f, value, onChange, error, label, refParams, onRefP
       return <TagsInput value={arr} onChange={onChange} disabled={disabled} />;
     }
     default:
-      if (f.suggestions?.length)
-        return (
-          <>
-            <Input {...common} list={`${id}-list`} autoComplete="off" value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder ?? 'Type or pick from the list'} maxLength={f.maxLength ?? 300} />
-            <datalist id={`${id}-list`}>
-              {f.suggestions.map((o) => (
-                <option key={o} value={o} />
-              ))}
-            </datalist>
-          </>
-        );
+      if (suggestionItems?.length || f.suggestions?.length)
+        return <SuggestInput id={id} disabled={disabled} invalid={!!error} items={suggestionItems ?? f.suggestions!.map((v) => ({ value: v }))} value={(value as string) ?? ''} onChange={onChange} placeholder={f.placeholder ?? 'Type to search, or type your own'} maxLength={f.maxLength ?? 300} />;
       return <Input {...common} value={(value as string) ?? ''} onChange={(e) => onChange(e.target.value)} placeholder={f.placeholder} maxLength={f.maxLength ?? 300} />;
   }
 }
@@ -346,6 +338,17 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
   const schema = useMemo(() => buildObjectSchema(def.fields, mode), [def, mode]);
   const values = form.watch();
 
+  /** Ready-made items offered while typing in the autofill field, each with a short hint (e.g. code · unit · category). */
+  const autofillItems = useMemo<Suggestion[] | undefined>(() => {
+    const af = def.autofill;
+    if (!af) return undefined;
+    return af.items.map((it) => {
+      const r = it as Record<string, unknown>;
+      const hint = ['code', 'unit', 'category'].map((k) => r[k]).filter((v) => typeof v === 'string' && v).join(' · ');
+      return { value: String(r[af.from] ?? ''), hint: hint || undefined };
+    });
+  }, [def]);
+
   /** Fills the still-empty fields from a ready-made item whose `from` value matches (see ResourceDef.autofill). */
   const applyAutofill = (name: string, value: unknown) => {
     const af = def.autofill;
@@ -471,7 +474,7 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
                       </div>
                     ) : (
                       <Field label={f.label} htmlFor={`f-${f.name}`} required={f.required} error={errors[f.name]} help={f.help} className={cx(f.span === 3 && 'sm:col-span-2 lg:col-span-3', f.span === 2 && 'sm:col-span-2', f.type === 'textarea' && !f.span && 'sm:col-span-2 lg:col-span-3')}>
-                        <FieldInput f={f} value={field.value} onChange={(v) => { field.onChange(v); applyAutofill(f.name, v); }} error={errors[f.name]} label={(record?._labels as Record<string, string> | undefined)?.[f.name]} disabled={lockedFields.includes(f.name)} refParams={refParams?.(f.name, {}, values)} />
+                        <FieldInput f={f} value={field.value} onChange={(v) => { field.onChange(v); applyAutofill(f.name, v); }} error={errors[f.name]} label={(record?._labels as Record<string, string> | undefined)?.[f.name]} disabled={lockedFields.includes(f.name)} refParams={refParams?.(f.name, {}, values)} suggestionItems={def.autofill?.from === f.name ? autofillItems : undefined} />
                       </Field>
                     )
                   }

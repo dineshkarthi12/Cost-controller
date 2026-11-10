@@ -66,7 +66,7 @@ export const materials: ResourceDef = {
   autofill: { from: 'name', items: MATERIAL_PRESETS },
   fields: [
     { name: 'code', label: 'Code', type: 'text', required: true, list: true, sortable: true },
-    { name: 'name', label: 'Name', type: 'text', required: true, list: true, sortable: true, span: 2, suggestions: MATERIAL_PRESETS.map((m) => m.name), help: 'Pick from the list to fill code, category, unit and specification, or type your own.' },
+    { name: 'name', label: 'Name', type: 'text', required: true, list: true, sortable: true, span: 2, suggestions: MATERIAL_PRESETS.map((m) => m.name), help: 'Type a few letters (e.g. cement, tmt 12, m-sand) and pick from the list to fill code, category, unit and specification, or type your own.' },
     { name: 'category', label: 'Category', type: 'text', required: true, list: true, filter: true, suggestions: MATERIAL_CATEGORIES },
     { name: 'unit', label: 'Unit', type: 'ref', ref: 'uoms', required: true, list: true },
     { name: 'specification', label: 'Specification', type: 'textarea', span: 3 },

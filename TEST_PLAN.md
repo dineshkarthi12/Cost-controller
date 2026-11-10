@@ -67,7 +67,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 |---|---|
 | `@toprock/shared` unit | **45 / 45 passed** (5 files) |
 | `@toprock/api` integration | **146 / 146 passed** (18 files) |
-| `@toprock/web` components | **11 / 11 passed** (3 files) |
+| `@toprock/web` components | **13 / 13 passed** (4 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |
 | Production build (`vite build`, `tsup`) | **passing** |
