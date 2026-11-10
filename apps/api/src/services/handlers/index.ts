@@ -15,6 +15,7 @@ import { notify } from '../notifications.js';
 import { refreshChecklist } from '../periodClose.js';
 import { postingDate } from '../periods.js';
 import type { DocHandler, WorkflowEntity } from './types.js';
+import { refreshMaterialPurchaseRates } from '../materialRates.js';
 
 const link = (path: string) => (e: WorkflowEntity) => `${path}/${e.id}`;
 
@@ -165,6 +166,7 @@ const po: DocHandler = {
       ctx.user.id,
       lines.map((l) => ({ projectId: e.projectId, costCodeId: l.costCodeId, date: e.orderDate as Date, kind: 'COMMITMENT' as const, amount: l.amount.toString(), sourceType: 'PO', sourceId: e.id, sourceNumber: e.number, partyId: e.supplierId as string, description: l.description })),
     );
+    await refreshMaterialPurchaseRates(tx, ctx.orgId, lines.map((l) => l.materialId as string));
   },
 };
 
@@ -208,6 +210,8 @@ const poAmendment: DocHandler = {
       data: { revision: e.revisionNo as number, subtotal: proposed.subtotal, discount: proposed.discount, netAmount: proposed.netAmount, taxAmount: proposed.taxAmount, total: proposed.total, deliveryDate: proposed.deliveryDate ? new Date(proposed.deliveryDate) : p.deliveryDate },
     });
     await tx.poRevision.update({ where: { id: e.id }, data: { approvedAt: new Date() } });
+    const after = await tx.purchaseOrderLine.findMany({ where: { poId: p.id }, select: { materialId: true } });
+    await refreshMaterialPurchaseRates(tx, ctx.orgId, after.map((l) => l.materialId as string));
   },
 };
 

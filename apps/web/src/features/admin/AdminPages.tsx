@@ -444,6 +444,7 @@ export function IntegrationsPage() {
 /* ------------------------------------------------------------------ Settings */
 
 interface OrgSettings {
+  updateStandardRateFromPo: boolean;
   taxIsCost: boolean;
   manpowerUniqueness: string;
   budgetCheckMode: string;
@@ -548,6 +549,7 @@ function GeneralSettings() {
         <div className="space-y-3">
           <Checkbox label="Treat tax as cost (non-recoverable tax is posted to the cost ledger)" checked={d.settings.taxIsCost} disabled={ro} onChange={(e) => ss({ taxIsCost: e.target.checked })} />
           <Checkbox label="Approved variations create a budget revision automatically" checked={d.settings.autoBudgetRevisionFromVariation} disabled={ro} onChange={(e) => ss({ autoBudgetRevisionFromVariation: e.target.checked })} />
+          <Checkbox label="Approved purchase orders update each material's standard rate to the latest purchase rate" checked={d.settings.updateStandardRateFromPo ?? true} disabled={ro} onChange={(e) => ss({ updateStandardRateFromPo: e.target.checked })} />
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Budget check on PR/PO" help="WARN shows a warning; BLOCK prevents submission over budget"><Select options={['WARN', 'BLOCK']} value={d.settings.budgetCheckMode} disabled={ro} onChange={(e) => ss({ budgetCheckMode: e.target.value })} /></Field>
             <Field label="Cost alert threshold (%)" help="Warning when incurred + committed reaches this share of budget"><Input inputMode="decimal" value={pct(d.settings.alertWarnPct)} disabled={ro} onChange={(e) => ss({ alertWarnPct: frac(e.target.value) })} /></Field>

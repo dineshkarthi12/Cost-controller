@@ -1190,6 +1190,11 @@ model Material {
   specification String?
   reorderLevel  Decimal? @db.Decimal(18, 4)
   standardRate  Decimal? @db.Decimal(18, 4)
+  /// Kept up to date from approved purchase orders (rate after discount, before tax, per this material's unit).
+  lastPurchaseRate Decimal?  @db.Decimal(18, 4)
+  lastPurchaseDate DateTime? @db.Date
+  lastPurchaseRef  String?
+  avgPurchaseRate  Decimal?  @db.Decimal(18, 4)
   batchTracked  Boolean  @default(false)
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
@@ -1210,6 +1215,7 @@ model Material {
   rel_purchaseOrderLine_material PurchaseOrderLine[] @relation("PurchaseOrderLine_materialId")
   rel_grnLine_material GrnLine[] @relation("GrnLine_materialId")
   rel_mir_material Mir[] @relation("Mir_materialId")
+  rel_bomLine_material BomLine[] @relation("BomLine_materialId")
 }
 
 model Store {
@@ -3127,10 +3133,16 @@ model BomLine {
   rate        Decimal? @db.Decimal(18, 4)
   amount      Decimal? @db.Decimal(18, 2)
   remarks     String?
+  /// Material master record this line is (MATERIAL lines; matched by name on import or linked by hand).
+  materialId  String?
+  /// Where the rate came from: FILE (the workbook), MATERIAL (the material's rate) or MANUAL (typed in the app).
+  rateSource  String?
 
-  bomItem BomItem @relation(fields: [bomItemId], references: [id], onDelete: Cascade)
+  bomItem  BomItem   @relation(fields: [bomItemId], references: [id], onDelete: Cascade)
+  material Material? @relation("BomLine_materialId", fields: [materialId], references: [id], onDelete: SetNull)
 
   @@index([bomItemId])
+  @@index([materialId])
 }
 
 /// Daily work report of an office team member (QS / estimation): today's work with hours, and tomorrow's plan.

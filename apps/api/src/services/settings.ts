@@ -11,6 +11,8 @@ export const orgSettingsSchema = z.object({
   alertWarnPct: z.string().regex(/^\d+(\.\d+)?$/).default('0.95'),
   measurementDuplicateMode: z.enum(['BLOCK_UNLESS_REASON', 'WARN']).default('BLOCK_UNLESS_REASON'),
   autoBudgetRevisionFromVariation: z.boolean().default(true),
+  /** Approved purchase orders set each material's standard rate to the latest purchase rate. */
+  updateStandardRateFromPo: z.boolean().default(true),
   visibleModules: z.array(z.string()).default(MODULES.map((m) => m.key)),
   /** Later modules already offered to this organisation (so hiding one sticks). */
   modulesOffered: z.array(z.string()).default([]),

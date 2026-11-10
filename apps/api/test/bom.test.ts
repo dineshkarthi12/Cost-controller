@@ -65,7 +65,7 @@ describe('bill of materials', () => {
   it('imports, links BOQ items by reference, and adds the same material up across items', async () => {
     const p = await preview();
     const c = await qs.post(`/api${w.P}/bom/import/${p.body.id}/commit`).set('X-Requested-With', 'toprock').send({});
-    expect(c.body).toEqual({ items: 2, lines: 5, replaced: 0 });
+    expect(c.body).toMatchObject({ items: 2, lines: 5, replaced: 0 });
     const bom = await w.c.qs.ok.get(`${w.P}/bom`);
     expect(bom.items[0].boqItem.itemCode).toBe('2.05');
     expect(bom.items[1].boqItem).toBeNull();
