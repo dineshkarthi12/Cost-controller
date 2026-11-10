@@ -44,6 +44,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Period close | Cannot close with pending checklist items. A waiver needs a note. Reviewer sign-off closes the period. A posting into the closed period is refused and rolled back. Only `period.reopen` holders can reopen, and only with a reason (≥ 10 characters), which is audited. (`periods.test.ts`) |
 | Imports | Preview validates every row (number format, duplicates in file, unknown references) without writing. Commit is refused while errors exist unless the user skips them. A job cannot be committed twice. Error CSV neutralises formulas. Import permission required. Estimator-style BOQ workbooks (Summary sheet first, sections, item headings, a/b lines, section totals, note column) are flattened with codes like 2.01.a, headings kept as specification, and the total checked against the file's section totals; the real LOF Mega Mall BOQ imported 214 items totalling ₹1,55,94,970.30, matching the file (checked by hand). (`imports.test.ts`) |
 | Material preset list | Presets use only the default units, with unique codes and names; the list marks materials already added (by code or name); adding the chosen presets stores code, category, unit, specification and an optional rate, skips ones already present and writes one audit entry; the whole list (400) can be added in one request; unknown codes, bad rates and users without `material.manage` are refused. The picker dialog, the name suggestions with auto-fill in the New material form, and typing a material that is not in the list were checked in a browser (desktop and phone). (`material-presets.test.ts`) |
+| Supplier presets and supplies / trade | Brand list has unique codes and names and only uses offered supply values; supplies are stored (preset and typed values), default to empty, and filter the party list; the supplier import reads a Supplies column and accepts a "Roles" header. Brand type-ahead with auto-fill, typing a local dealer, adding supplies with the keyboard and the list filter were checked in a browser (desktop and phone). (`party-presets.test.ts`) |
 | Reports and exports | CSV, PDF and XLSX exports download from the UI with correctly named, non-empty files (`journey.spec.ts`) |
 | Responsive and mobile | Bottom navigation and capture entry are present, with no horizontal overflow on the dashboard, evidence, MR list or manpower pages at Pixel 7 size (`mobile.spec.ts`) |
 | Forms | Successful save navigates without a false "unsaved changes" prompt. Required-reason dialogs block empty reasons. (`journey.spec.ts`, `components.test.tsx`) |
@@ -66,7 +67,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Suite | Result |
 |---|---|
 | `@toprock/shared` unit | **45 / 45 passed** (5 files) |
-| `@toprock/api` integration | **146 / 146 passed** (18 files) |
+| `@toprock/api` integration | **149 / 149 passed** (19 files) |
 | `@toprock/web` components | **13 / 13 passed** (4 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |

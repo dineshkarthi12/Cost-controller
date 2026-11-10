@@ -1,0 +1,1 @@
+ALTER TABLE "Party" ADD COLUMN "supplies" TEXT[] DEFAULT ARRAY[]::TEXT[];

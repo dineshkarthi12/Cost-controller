@@ -276,6 +276,7 @@ model Party {
   code             String
   name             String
   kinds            String[] // CLIENT | CONSULTANT | SUPPLIER | SUBCONTRACTOR
+  supplies         String[] @default([]) // what a supplier supplies / a subcontractor's trade
   contactName      String?
   email            String?
   phone            String?

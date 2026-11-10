@@ -1,5 +1,6 @@
 import type { ResourceDef } from './types.js';
 import { MATERIAL_CATEGORIES, MATERIAL_PRESETS } from '../catalogues/materials.js';
+import { PARTY_PRESETS, SUPPLY_OPTIONS } from '../catalogues/parties.js';
 
 export const PARTY_KINDS = ['CLIENT', 'CONSULTANT', 'SUPPLIER', 'SUBCONTRACTOR'] as const;
 
@@ -15,10 +16,12 @@ export const parties: ResourceDef = {
   defaultSort: { field: 'name', dir: 'asc' },
   searchFields: ['code', 'name', 'contactName', 'email', 'taxId'],
   description: 'One master record per counterparty. A company can be both supplier and subcontractor without duplicate records.',
+  autofill: { from: 'name', items: PARTY_PRESETS },
   fields: [
     { name: 'code', label: 'Code', type: 'text', required: true, list: true, sortable: true },
-    { name: 'name', label: 'Name', type: 'text', required: true, list: true, sortable: true, span: 2 },
+    { name: 'name', label: 'Name', type: 'text', required: true, list: true, sortable: true, span: 2, suggestions: PARTY_PRESETS.map((x) => x.name), help: 'Type a few letters to pick a known brand (e.g. ultratech, tata steel, polycab), or type your dealer’s name.' },
     { name: 'kinds', label: 'Roles', type: 'tags', options: PARTY_KINDS, required: true, list: true, filter: true },
+    { name: 'supplies', label: 'Supplies / trade', type: 'tags', suggestions: SUPPLY_OPTIONS, list: true, filter: true, span: 3, help: 'What they supply (Cement, Steel, RMC…) or the trade of a subcontractor (Shuttering, Electrical…). Pick from the list or type your own.' },
     { name: 'contactName', label: 'Contact person', type: 'text', list: true },
     { name: 'email', label: 'Email', type: 'text' },
     { name: 'phone', label: 'Phone', type: 'text', list: true },

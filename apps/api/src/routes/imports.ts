@@ -56,7 +56,7 @@ export const IMPORT_SPECS: Record<Kind, { title: string; projectScoped: boolean;
     title: 'Suppliers & contractors',
     projectScoped: false,
     permission: 'material.manage',
-    fields: [txt('code', 'Code', true), txt('name', 'Name', true), txt('kinds', 'Roles (comma separated)', true, ['type', 'role']), txt('contactName', 'Contact'), txt('email', 'Email'), txt('phone', 'Phone'), txt('taxId', 'Tax ID', false, ['gstin', 'gst']), txt('address', 'Address'), num('paymentTermsDays', 'Payment terms (days)')],
+    fields: [txt('code', 'Code', true), txt('name', 'Name', true), txt('kinds', 'Roles (comma separated)', true, ['type', 'role', 'roles']), txt('contactName', 'Contact'), txt('email', 'Email'), txt('phone', 'Phone'), txt('taxId', 'Tax ID', false, ['gstin', 'gst']), txt('address', 'Address'), num('paymentTermsDays', 'Payment terms (days)'), txt('supplies', 'Supplies / trade (comma separated)', false, ['supplies', 'trade', 'category'])],
   },
   OPENING_STOCK: {
     title: 'Opening stock',
@@ -299,7 +299,7 @@ importsRouter.post('/:id/commit', async (req, res) => {
     } else if (kind === 'MATERIALS') {
       await tx.material.createMany({ data: valid.map(({ values: v }) => ({ orgId: ctx.orgId, code: v.code, name: v.name, category: v.category, unit: v.unit, specification: v.specification || null, reorderLevel: v.reorderLevel || null, standardRate: v.standardRate || null })) });
     } else if (kind === 'SUPPLIERS') {
-      await tx.party.createMany({ data: valid.map(({ values: v }) => ({ orgId: ctx.orgId, code: v.code, name: v.name, kinds: v.kinds.split(',').map((k) => k.trim().toUpperCase()).filter(Boolean), contactName: v.contactName || null, email: v.email || null, phone: v.phone || null, taxId: v.taxId || null, address: v.address || null, paymentTermsDays: v.paymentTermsDays ? Number(v.paymentTermsDays) : null })) });
+      await tx.party.createMany({ data: valid.map(({ values: v }) => ({ orgId: ctx.orgId, code: v.code, name: v.name, kinds: v.kinds.split(',').map((k) => k.trim().toUpperCase()).filter(Boolean), contactName: v.contactName || null, email: v.email || null, phone: v.phone || null, taxId: v.taxId || null, address: v.address || null, paymentTermsDays: v.paymentTermsDays ? Number(v.paymentTermsDays) : null, supplies: [...new Set((v.supplies ?? '').split(',').map((x: string) => x.trim()).filter(Boolean))] })) });
     } else if (kind === 'OPENING_STOCK') {
       const stores = new Map((await tx.store.findMany({ where: { projectId: projectId! } })).map((s) => [s.code, s.id]));
       const mats = new Map((await tx.material.findMany({ where: { orgId: ctx.orgId } })).map((m) => [m.code, m.id]));

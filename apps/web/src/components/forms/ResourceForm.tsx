@@ -11,7 +11,7 @@ import { useFormDraft, clearDraft } from '../../lib/drafts';
 import { formatMoney } from '../../lib/format';
 import { Button, Checkbox, Field, Input, Select, Textarea, cx, ConfirmDialog } from '../ui';
 import { RefSelect, type RefOption } from './RefSelect';
-import { SuggestInput, type Suggestion } from './SuggestInput';
+import { SuggestInput, matchSuggestions, type Suggestion } from './SuggestInput';
 
 type Values = Record<string, unknown>;
 
@@ -95,7 +95,7 @@ export function FieldInput({ f, value, onChange, error, label, refParams, onRefP
             ))}
           </div>
         );
-      return <TagsInput value={arr} onChange={onChange} disabled={disabled} />;
+      return <TagsInput id={id} value={arr} onChange={onChange} disabled={disabled} suggestions={f.suggestions} />;
     }
     default:
       if (suggestionItems?.length || f.suggestions?.length)
@@ -104,39 +104,86 @@ export function FieldInput({ f, value, onChange, error, label, refParams, onRefP
   }
 }
 
-function TagsInput({ value, onChange, disabled }: { value: string[]; onChange: (v: string[]) => void; disabled?: boolean }) {
+function TagsInput({ id, value, onChange, disabled, suggestions }: { id?: string; value: string[]; onChange: (v: string[]) => void; disabled?: boolean; suggestions?: readonly string[] }) {
   const [text, setText] = useState('');
-  const add = () => {
-    const t = text.trim();
-    if (t && !value.includes(t)) onChange([...value, t]);
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(0);
+  const items = useMemo(() => (suggestions ?? []).filter((x) => !value.includes(x)).map((v) => ({ value: v })), [suggestions, value]);
+  // Short lists open on focus; otherwise suggestions appear once you type.
+  const shown = text.trim() ? matchSuggestions(items, text, 8) : items.length && items.length <= 60 ? items : [];
+  const isOpen = open && shown.length > 0 && !disabled;
+  const add = (raw = text) => {
+    const t = raw.trim();
+    // Typed text that matches a suggestion apart from letter case uses the suggestion's spelling.
+    const canonical = suggestions?.find((x) => x.toLowerCase() === t.toLowerCase()) ?? t;
+    if (canonical && !value.includes(canonical)) onChange([...value, canonical]);
     setText('');
+    setActive(0);
   };
   return (
-    <div className="input flex flex-wrap items-center gap-1.5 py-1.5">
-      {value.map((t) => (
-        <span key={t} className="inline-flex items-center gap-1 rounded bg-brand-50 px-2 py-0.5 text-xs text-navy-800">
-          {t}
-          {!disabled && (
-            <button type="button" aria-label={`Remove ${t}`} onClick={() => onChange(value.filter((x) => x !== t))}>
-              ×
-            </button>
-          )}
-        </span>
-      ))}
-      <input
-        className="min-w-[120px] flex-1 border-0 p-0 text-sm focus:outline-none focus:ring-0"
-        value={text}
-        disabled={disabled}
-        onChange={(e) => setText(e.target.value)}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter' || e.key === ',') {
-            e.preventDefault();
+    <div className="relative">
+      <div className="input flex flex-wrap items-center gap-1.5 py-1.5">
+        {value.map((t) => (
+          <span key={t} className="inline-flex items-center gap-1 rounded bg-brand-50 px-2 py-0.5 text-xs text-navy-800">
+            {t}
+            {!disabled && (
+              <button type="button" aria-label={`Remove ${t}`} onClick={() => onChange(value.filter((x) => x !== t))}>
+                ×
+              </button>
+            )}
+          </span>
+        ))}
+        <input
+          id={id}
+          className="min-w-[120px] flex-1 border-0 p-0 text-sm focus:outline-none focus:ring-0"
+          value={text}
+          disabled={disabled}
+          role={suggestions ? 'combobox' : undefined}
+          aria-expanded={suggestions ? isOpen : undefined}
+          autoComplete="off"
+          onChange={(e) => {
+            setText(e.target.value);
+            setActive(0);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={(e) => {
+            if (e.key === 'ArrowDown' && isOpen) {
+              e.preventDefault();
+              setActive((a) => Math.min(a + 1, shown.length - 1));
+            } else if (e.key === 'ArrowUp' && isOpen) {
+              e.preventDefault();
+              setActive((a) => Math.max(a - 1, 0));
+            } else if (e.key === 'Escape') setOpen(false);
+            else if (e.key === 'Enter' || e.key === ',') {
+              e.preventDefault();
+              add(isOpen && text.trim() ? shown[Math.min(active, shown.length - 1)].value : text);
+            } else if (e.key === 'Backspace' && !text && value.length) onChange(value.slice(0, -1));
+          }}
+          onBlur={() => {
+            setOpen(false);
             add();
-          }
-        }}
-        onBlur={add}
-        placeholder="Type and press Enter"
-      />
+          }}
+          placeholder={value.length ? '' : suggestions ? 'Type to search, or type your own' : 'Type and press Enter'}
+        />
+      </div>
+      {isOpen && (
+        <ul role="listbox" className="absolute left-0 right-0 z-30 mt-1 max-h-60 overflow-y-auto rounded-lg border border-line bg-white py-1 shadow-lg">
+          {shown.map((s, i) => (
+            <li
+              key={s.value}
+              role="option"
+              aria-selected={i === active}
+              className={cx('cursor-pointer px-3 py-1.5 text-sm text-ink', i === active ? 'bg-brand-50' : 'hover:bg-slate-50')}
+              onMouseDown={(e) => e.preventDefault()}
+              onMouseEnter={() => setActive(i)}
+              onClick={() => add(s.value)}
+            >
+              {s.value}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }
@@ -344,7 +391,7 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
     if (!af) return undefined;
     return af.items.map((it) => {
       const r = it as Record<string, unknown>;
-      const hint = ['code', 'unit', 'category'].map((k) => r[k]).filter((v) => typeof v === 'string' && v).join(' · ');
+      const hint = ['code', 'unit', 'category', 'supplies'].map((k) => (Array.isArray(r[k]) ? (r[k] as string[]).join(', ') : r[k])).filter((v) => typeof v === 'string' && v).join(' · ');
       return { value: String(r[af.from] ?? ''), hint: hint || undefined };
     });
   }, [def]);
@@ -361,7 +408,7 @@ export function ResourceForm({ def, mode, record, initial, draftKey, onSubmit, o
       const f = def.fields.find((x) => x.name === k && !x.readOnly);
       if (!f || lockedFields.includes(k)) continue;
       const cur = form.getValues(k);
-      if (cur === '' || cur === undefined || cur === null) form.setValue(k, toUiValue(f, v), { shouldDirty: true });
+      if (cur === '' || cur === undefined || cur === null || (Array.isArray(cur) && cur.length === 0)) form.setValue(k, toUiValue(f, Array.isArray(v) ? [...v] : v), { shouldDirty: true });
     }
   };
 

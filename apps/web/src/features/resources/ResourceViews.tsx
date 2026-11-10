@@ -48,7 +48,7 @@ export function renderValue(f: FieldDef, rec: Rec, currency = 'INR'): ReactNode 
       return (
         <span className="flex flex-wrap gap-1">
           {(v as string[]).map((t) => (
-            <Badge key={t}>{humanize(t)}</Badge>
+            <Badge key={t}>{f.options ? humanize(t) : t}</Badge>
           ))}
         </span>
       );
@@ -163,7 +163,7 @@ export function ResourceList({ resourceKey, basePath, title, subtitle, actions, 
             ) : f.type === 'boolean' ? (
               <Select key={f.name} className="w-40" aria-label={f.label} options={[{ value: 'true', label: `${f.label}: yes` }, { value: 'false', label: `${f.label}: no` }]} placeholder={`${f.label}: any`} value={state.filters[f.name]} onChange={(e) => update({ [f.name]: e.target.value })} />
             ) : (
-              <Select key={f.name} className="w-44" aria-label={f.label} options={(f.name === 'status' ? (statusOptions ?? def.statusOptions ?? def.manualStatuses ?? (def.workflow ? ['DRAFT', 'SUBMITTED', 'RETURNED', 'APPROVED', 'REJECTED', 'CANCELLED'] : f.options ?? [])) : (f.options ?? [])) as string[]} placeholder={`All ${f.label.toLowerCase()}`} value={state.filters[f.name]} onChange={(e) => update({ [f.name]: e.target.value })} />
+              <Select key={f.name} className="w-44" aria-label={f.label} options={(f.name === 'status' ? (statusOptions ?? def.statusOptions ?? def.manualStatuses ?? (def.workflow ? ['DRAFT', 'SUBMITTED', 'RETURNED', 'APPROVED', 'REJECTED', 'CANCELLED'] : f.options ?? [])) : (f.options ?? f.suggestions?.map((x) => ({ value: x, label: x })) ?? [])) as Array<string | { value: string; label: string }>} placeholder={`All ${f.label.toLowerCase()}`} value={state.filters[f.name]} onChange={(e) => update({ [f.name]: e.target.value })} />
             ),
           )}
           <Select
