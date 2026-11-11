@@ -3,6 +3,7 @@
  * Both are converted to one neutral structure; nothing is written until the user commits the preview.
  */
 import { XMLParser } from 'fast-xml-parser';
+import { parseScheduleExcel } from './scheduleExcel.js';
 
 export interface ImportedActivity {
   /** Identifier inside the file (MSP UID, P6 task_id); used to resolve dependencies. */
@@ -16,6 +17,10 @@ export interface ImportedActivity {
   actualFinish: string | null;
   percentComplete: number; // 0–100
   isMilestone: boolean;
+  /** Excel sheets may also give these. */
+  unit?: string | null;
+  plannedQty?: string | null;
+  weight?: string | null;
 }
 
 export interface ImportedDependency {
@@ -26,7 +31,7 @@ export interface ImportedDependency {
 }
 
 export interface ParsedSchedule {
-  format: 'MS_PROJECT_XML' | 'PRIMAVERA_XER';
+  format: 'MS_PROJECT_XML' | 'PRIMAVERA_XER' | 'EXCEL';
   projectName: string | null;
   activities: ImportedActivity[];
   dependencies: ImportedDependency[];
@@ -188,11 +193,13 @@ export function parseXer(text: string): ParsedSchedule {
   return { format: 'PRIMAVERA_XER', projectName: projects[0]?.proj_short_name ?? null, activities, dependencies, warnings };
 }
 
-/** Detects the format from content and file name. */
-export function parseScheduleFile(fileName: string, buf: Buffer): ParsedSchedule {
-  const text = buf.toString('utf8').replace(/^﻿/, '');
-  const parsed = /\.xer$/i.test(fileName) || text.startsWith('ERMHDR') ? parseXer(text) : /^\s*</.test(text) ? parseMsProjectXml(text) : null;
-  if (!parsed) throw new Error('Upload a Microsoft Project XML file (.xml) or a Primavera P6 export (.xer)');
+/** Detects the format from content and file name: Excel (.xlsx), MS Project XML or Primavera XER. */
+export async function parseScheduleFile(fileName: string, buf: Buffer): Promise<ParsedSchedule> {
+  if (/\.xls$/i.test(fileName)) throw new Error('Old .xls files cannot be read. Open the file in Excel and save it as .xlsx (Excel Workbook).');
+  const isZip = buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4b;
+  const text = isZip ? '' : buf.toString('utf8').replace(/^﻿/, '');
+  const parsed = isZip || /\.xlsx$/i.test(fileName) ? await parseScheduleExcel(buf) : /\.xer$/i.test(fileName) || text.startsWith('ERMHDR') ? parseXer(text) : /^\s*</.test(text) ? parseMsProjectXml(text) : null;
+  if (!parsed) throw new Error('Upload an Excel schedule (.xlsx), a Microsoft Project XML file (.xml) or a Primavera P6 export (.xer)');
   if (parsed.activities.length > MAX_IMPORT_ACTIVITIES) throw new Error(`Imports are limited to ${MAX_IMPORT_ACTIVITIES} activities`);
   const keys = new Set(parsed.activities.map((a) => a.key));
   const before = parsed.dependencies.length;

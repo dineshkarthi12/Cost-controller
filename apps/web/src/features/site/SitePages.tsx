@@ -391,6 +391,7 @@ export function SchedulePage() {
           <>
             <Tabs value={view} onValueChange={(v) => setView(v as 'all' | 'lookahead' | 'critical')} tabs={[{ value: 'all', label: 'Full schedule' }, { value: 'critical', label: 'Critical path' }, { value: 'lookahead', label: '3-week look-ahead' }]} />
             {can('progress.manage') && <ImportScheduleButton />}
+            {can('progress.manage') && <BaselineButton />}
             {can('progress.manage') && <Button variant="outline" onClick={() => navigate('/schedule/activities/new')}>Add activity</Button>}
           </>
         }
@@ -473,7 +474,7 @@ export function SchedulePage() {
 interface SchedulePreview {
   id: string;
   summary: { format: string; projectName: string | null; activities: number; newActivities: number; updatedActivities: number; dependencies: number; warnings: string[] };
-  activities: Array<{ code: string; name: string; plannedStart: string | null; plannedFinish: string | null; actualStart: string | null; actualFinish: string | null; percentComplete: number; isMilestone: boolean; exists: boolean }>;
+  activities: Array<{ code: string; name: string; wbs: string | null; plannedStart: string | null; plannedFinish: string | null; actualStart: string | null; actualFinish: string | null; percentComplete: number; isMilestone: boolean; exists: boolean }>;
 }
 
 /** MS Project XML / Primavera XER import: upload → preview → import. */
@@ -517,7 +518,7 @@ function ImportScheduleButton() {
         onOpenChange={(o) => { setOpen(o); if (!o) reset(); }}
         size="xl"
         title="Import schedule"
-        description="Microsoft Project: File → Save As → XML. Primavera P6: File → Export → XER. Activities are matched by code (MS Project WBS or P6 activity ID): existing ones are updated, new ones are created."
+        description="Excel (.xlsx): one row per activity with a name and Start / Finish (or Start and Duration); Activity ID, Predecessors, WBS, Milestone, Unit, Qty, Weight and % Complete are read when present. Microsoft Project: File → Save As → XML. Primavera P6: File → Export → XER. Activities are matched by code: existing ones are updated, new ones are created."
         footer={
           preview ? (
             <>
@@ -530,13 +531,22 @@ function ImportScheduleButton() {
         }
       >
         {!preview ? (
-          <Field label="Schedule file (.xml or .xer)" required>
-            <Input type="file" accept=".xml,.xer,text/xml,application/xml" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
-          </Field>
+          <div className="space-y-3">
+            <Field label="Schedule file (.xlsx, .xml or .xer)" required>
+              <Input type="file" accept=".xlsx,.xml,.xer,text/xml,application/xml,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+            </Field>
+            <p className="text-sm text-muted">
+              Planning in Excel?{' '}
+              <a className="font-medium text-brand-600 hover:underline" href={api.url(`/projects/${projectId}/schedule/import/template`)} download>
+                Download the Excel template
+              </a>{' '}
+              to see the columns. Dates like 15-01-2027 or 15-Jan-27; predecessors like “A-110” or “A-110 FS+2”; rows with only a name (e.g. TOWER A) are taken as headings.
+            </p>
+          </div>
         ) : (
           <div className="space-y-3 text-sm">
             <div className="flex flex-wrap items-center gap-2">
-              <Badge tone="info">{s!.format === 'PRIMAVERA_XER' ? 'Primavera P6' : 'MS Project'}</Badge>
+              <Badge tone="info">{s!.format === 'PRIMAVERA_XER' ? 'Primavera P6' : s!.format === 'EXCEL' ? 'Excel' : 'MS Project'}</Badge>
               {s!.projectName && <strong>{s!.projectName}</strong>}
               <Badge tone="success">{s!.newActivities} new</Badge>
               <Badge tone="neutral">{s!.updatedActivities} update existing</Badge>
@@ -556,7 +566,11 @@ function ImportScheduleButton() {
                   {preview.activities.map((a) => (
                     <tr key={a.code} className="border-t border-line">
                       <td className="px-2 py-1 font-medium whitespace-nowrap">{a.code}</td>
-                      <td className="max-w-[260px] truncate px-2 py-1">{a.isMilestone && <Flag className="mr-1 inline h-3 w-3" />}{a.name}</td>
+                      <td className="max-w-[260px] truncate px-2 py-1">
+                        {a.isMilestone && <Flag className="mr-1 inline h-3 w-3" />}
+                        {a.name}
+                        {a.wbs && <span className="block truncate text-[11px] text-muted">{a.wbs}</span>}
+                      </td>
                       <td className="px-2 py-1 whitespace-nowrap">{formatDate(a.plannedStart)} – {formatDate(a.plannedFinish)}</td>
                       <td className="px-2 py-1 whitespace-nowrap">{a.actualStart ? `${formatDate(a.actualStart)} – ${a.actualFinish ? formatDate(a.actualFinish) : '…'}` : '—'}</td>
                       <td className="px-2 py-1 text-right">{a.percentComplete}</td>
@@ -566,6 +580,67 @@ function ImportScheduleButton() {
                 </tbody>
               </table>
             </div>
+          </div>
+        )}
+      </Dialog>
+    </>
+  );
+}
+
+/** Saves today's plan as the baseline (planned → baseline dates), so later slips can be measured against it. */
+function BaselineButton() {
+  const projectId = useProjectId();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [replace, setReplace] = useState(false);
+  const q = useQuery({
+    queryKey: ['p', 'schedule-baseline', projectId],
+    queryFn: () => api.get<{ total: number; dated: number; withBaseline: number; changedSinceBaseline: number; lastSavedAt: string | null }>(`/projects/${projectId}/schedule/baseline`),
+    enabled: open,
+  });
+  const save = useMutation({
+    mutationFn: () => api.post<{ saved: number; kept: number; undated: number }>(`/projects/${projectId}/schedule/baseline`, { replace }),
+    onSuccess: (r) => {
+      toast.success(`Baseline saved for ${r.saved} activit${r.saved === 1 ? 'y' : 'ies'}${r.kept ? `; ${r.kept} kept their earlier baseline` : ''}${r.undated ? `; ${r.undated} without planned dates skipped` : ''}`);
+      setOpen(false);
+      setReplace(false);
+      void qc.invalidateQueries({ queryKey: ['p'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const d = q.data;
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>Save baseline</Button>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => { setOpen(o); if (!o) setReplace(false); }}
+        title="Save the schedule baseline"
+        description="Copies each activity's planned start and finish to its baseline dates: the approved plan that delays are measured against. Do this once the programme is agreed; re-baseline only when a revised programme is approved (e.g. after an extension of time)."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button loading={save.isPending} disabled={!d?.dated || (!replace && d.withBaseline >= d.dated)} onClick={() => save.mutate()}>{replace ? 'Re-baseline all activities' : 'Save baseline'}</Button>
+          </>
+        }
+      >
+        {!d ? (
+          <LoadingBlock rows={3} />
+        ) : (
+          <div className="space-y-3 text-sm">
+            <ul className="space-y-1">
+              <li>{d.dated} of {d.total} activities have planned dates.</li>
+              <li>{d.withBaseline} already have a baseline{d.lastSavedAt ? ` (last saved ${formatDate(d.lastSavedAt)})` : ''}.</li>
+              {!replace && d.dated > 0 && d.withBaseline >= d.dated && <li className="text-muted">Every dated activity already has a baseline (an imported schedule is baselined on import). Tick “Replace” below to re-baseline.</li>}
+              {d.changedSinceBaseline > 0 && <li className="text-amber-800">{d.changedSinceBaseline} activit{d.changedSinceBaseline === 1 ? 'y has' : 'ies have'} planned dates that differ from the baseline.</li>}
+            </ul>
+            {d.withBaseline > 0 && (
+              <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <input type="checkbox" className="mt-0.5 h-4 w-4 accent-brand-600" checked={replace} onChange={(e) => setReplace(e.target.checked)} />
+                <span>Replace existing baselines too (re-baseline). Otherwise only activities without a baseline get one.</span>
+              </label>
+            )}
+            <p className="text-xs text-muted">Recorded in the audit trail.</p>
           </div>
         )}
       </Dialog>

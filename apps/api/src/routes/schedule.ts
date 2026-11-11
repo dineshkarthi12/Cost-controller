@@ -10,6 +10,7 @@ import { ctxOf } from '../middleware/auth.js';
 import { assertCan, assertProjectAccess } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { config } from '../config.js';
+import { scheduleTemplate } from '../services/scheduleExcel.js';
 import { parseScheduleFile, type ImportedActivity, type ImportedDependency, type ParsedSchedule } from '../services/scheduleImport.js';
 
 export const scheduleRouter = Router({ mergeParams: true });
@@ -123,15 +124,23 @@ scheduleRouter.get('/cpm', async (req, res) => {
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: config.maxUploadBytes, files: 1 } });
 
+/** Excel template for schedules kept in Excel. */
+scheduleRouter.get('/import/template', async (req, res) => {
+  assertCan(ctxOf(req), 'progress.view', param(req, 'projectId'));
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', 'attachment; filename="schedule-template.xlsx"');
+  res.send(await scheduleTemplate());
+});
+
 /** Step 1: parse the file and show what would change. Nothing is written to activities. */
 scheduleRouter.post('/import/preview', upload.single('file'), async (req, res) => {
   const ctx = ctxOf(req);
   const projectId = param(req, 'projectId');
   assertCan(ctx, 'progress.manage', projectId);
-  if (!req.file) throw validationError('Choose a .xml (MS Project) or .xer (Primavera) file');
+  if (!req.file) throw validationError('Choose an Excel (.xlsx), MS Project (.xml) or Primavera (.xer) file');
   let parsed: ParsedSchedule;
   try {
-    parsed = parseScheduleFile(req.file.originalname, req.file.buffer);
+    parsed = await parseScheduleFile(req.file.originalname, req.file.buffer);
   } catch (e) {
     throw validationError((e as Error).message);
   }
@@ -156,6 +165,12 @@ scheduleRouter.post('/import/:id/commit', async (req, res) => {
   const d = (v: string | null) => (v ? new Date(`${v}T00:00:00Z`) : null);
   const out = await transaction(async (tx) => {
     const current = new Map((await tx.activity.findMany({ where: { projectId }, select: { id: true, code: true, baselineStart: true } })).map((a) => [a.code, a]));
+    // WBS given in the file (MS Project WBS, P6 WBS, Excel WBS / section) is linked when it matches a WBS code or name of the project.
+    const wbs = new Map<string, string>();
+    for (const n of await tx.wbsNode.findMany({ where: { projectId }, select: { id: true, code: true, name: true } })) {
+      wbs.set(n.name.toLowerCase(), n.id);
+      wbs.set(n.code.toLowerCase(), n.id);
+    }
     const idByKey = new Map<string, string>();
     let created = 0;
     let updated = 0;
@@ -163,7 +178,18 @@ scheduleRouter.post('/import/:id/commit', async (req, res) => {
       const progress = includeProgress
         ? { actualStart: d(a.actualStart), actualFinish: d(a.actualFinish), percentComplete: String(a.percentComplete), status: a.actualFinish ? 'COMPLETED' : a.actualStart ? 'IN_PROGRESS' : 'NOT_STARTED' }
         : {};
-      const plan = { name: a.name, plannedStart: d(a.plannedStart), plannedFinish: d(a.plannedFinish), isMilestone: a.isMilestone, sortOrder: i + 1 };
+      const wbsNodeId = a.wbs ? (wbs.get(a.wbs.toLowerCase()) ?? null) : null;
+      const plan = {
+        name: a.name,
+        plannedStart: d(a.plannedStart),
+        plannedFinish: d(a.plannedFinish),
+        isMilestone: a.isMilestone,
+        sortOrder: i + 1,
+        ...(wbsNodeId ? { wbsNodeId } : {}),
+        ...(a.unit ? { unit: a.unit } : {}),
+        ...(a.plannedQty ? { plannedQty: a.plannedQty } : {}),
+        ...(a.weight ? { weight: a.weight } : {}),
+      };
       const found = current.get(a.code);
       if (found) {
         await tx.activity.update({ where: { id: found.id }, data: { ...plan, ...progress, ...(found.baselineStart ? {} : { baselineStart: plan.plannedStart, baselineFinish: plan.plannedFinish }) } });
@@ -199,4 +225,55 @@ scheduleRouter.post('/import/:id/commit', async (req, res) => {
     return { created, updated, dependencies: links.size };
   });
   res.json(out);
+});
+
+// ───────── Baseline ─────────
+
+/**
+ * Saves the current plan as the baseline: planned start / finish are copied to baseline start / finish.
+ * Activities that already have a baseline keep it unless the user asks to replace it (re-baselining).
+ */
+scheduleRouter.post('/baseline', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'progress.manage', projectId);
+  const { replace } = parseBody(z.object({ replace: z.boolean().default(false) }), req.body ?? {});
+  const out = await transaction(async (tx) => {
+    const acts = await tx.activity.findMany({ where: { projectId }, select: { id: true, plannedStart: true, plannedFinish: true, baselineStart: true, baselineFinish: true } });
+    let saved = 0;
+    let kept = 0;
+    let undated = 0;
+    for (const a of acts) {
+      if (!a.plannedStart || !a.plannedFinish) {
+        undated++;
+        continue;
+      }
+      if ((a.baselineStart || a.baselineFinish) && !replace) {
+        kept++;
+        continue;
+      }
+      await tx.activity.update({ where: { id: a.id }, data: { baselineStart: a.plannedStart, baselineFinish: a.plannedFinish } });
+      saved++;
+    }
+    if (saved) await audit(tx, ctx, { action: 'SCHEDULE_BASELINED', entityType: 'project', entityId: projectId, projectId, summary: `Schedule baseline saved for ${saved} activit${saved === 1 ? 'y' : 'ies'}${replace ? ' (existing baselines replaced)' : ''}${kept ? `, ${kept} kept their baseline` : ''}` });
+    return { saved, kept, undated, total: acts.length };
+  });
+  res.json(out);
+});
+
+/** How many activities have a baseline, and whether the plan has moved since. */
+scheduleRouter.get('/baseline', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'progress.view', projectId);
+  const acts = await prisma.activity.findMany({ where: { projectId }, select: { plannedStart: true, plannedFinish: true, baselineStart: true, baselineFinish: true } });
+  const same = (x: Date | null, y: Date | null) => (x?.getTime() ?? null) === (y?.getTime() ?? null);
+  const last = await prisma.auditEvent.findFirst({ where: { projectId, action: 'SCHEDULE_BASELINED' }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } });
+  res.json({
+    total: acts.length,
+    dated: acts.filter((a) => a.plannedStart && a.plannedFinish).length,
+    withBaseline: acts.filter((a) => a.baselineStart || a.baselineFinish).length,
+    changedSinceBaseline: acts.filter((a) => (a.baselineStart || a.baselineFinish) && (!same(a.plannedStart, a.baselineStart) || !same(a.plannedFinish, a.baselineFinish))).length,
+    lastSavedAt: last?.createdAt ?? null,
+  });
 });
