@@ -86,9 +86,9 @@ async function readTable(file: Express.Multer.File): Promise<string[][]> {
   if (type === 'text/csv' || type === 'text/plain') {
     const { Readable } = await import('node:stream');
     await wb.csv.read(Readable.from(file.buffer.toString('utf8')));
-  } else if (type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || (type === 'application/zip' && file.originalname.endsWith('.xlsx'))) {
+  } else if (type === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
     await wb.xlsx.load(file.buffer as never);
-  } else throw validationError('Upload an .xlsx or .csv file');
+  } else throw validationError(/\.xls$/i.test(file.originalname) ? 'Old .xls files cannot be read. Open the file in Excel and save it as .xlsx (Excel Workbook).' : 'Upload an Excel (.xlsx) or .csv file');
   const ws = wb.worksheets[0];
   if (!ws) throw validationError('The file has no worksheet');
   const rows: string[][] = [];
@@ -233,7 +233,7 @@ importsRouter.post('/preview', upload.single('file'), async (req, res) => {
   const notes: string[] = [];
   let totals: { fileTotal: number | null; importedTotal: number } | null = null;
   let table: string[][] | null = null;
-  if (body.kind === 'BOQ' && !body.mapping && /\.xlsx$/i.test(req.file.originalname)) {
+  if (body.kind === 'BOQ' && !body.mapping && detectAllowedType(req.file.buffer, req.file.mimetype, req.file.originalname) === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet') {
     const boq = await readStructuredBoq(req.file.buffer);
     if (boq) {
       table = [['Item code', 'Description', 'Unit', 'Contract qty', 'Unit rate', 'Section', 'Specification', 'Remarks'], ...boq.items.map((i) => [i.itemCode, i.description, i.unit, String(i.qty), String(i.rate), i.section ?? '', i.specification ?? '', i.remarks ?? ''])];

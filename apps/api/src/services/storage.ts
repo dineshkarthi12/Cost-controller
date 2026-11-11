@@ -145,20 +145,43 @@ const ALLOWED_DECLARED: Record<string, string[]> = {
   ],
 };
 
+const XLSX = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+const DOCX = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+/** Types phones and some apps send for any file they cannot name (WhatsApp, Drive, Files, older Excel). */
+const UNKNOWN_DECLARED = new Set(['', 'application/octet-stream', 'application/vnd.ms-excel', 'application/x-zip-compressed', 'application/x-zip', 'application/msword', 'binary/octet-stream']);
+
+/** Office files are zips whose entry names (stored as plain text) tell what they are. */
+function officeType(buf: Buffer): string | null {
+  if (buf.includes('xl/workbook.xml') || buf.includes('xl/worksheets/')) return XLSX;
+  if (buf.includes('word/document.xml')) return DOCX;
+  return null;
+}
+
 /**
  * Validates file content against its declared type using magic bytes. Returns the stored
- * mime type or null if the file is not an allowed type.
+ * mime type or null if the file is not an allowed type. Excel and Word files are recognised by their
+ * content, because phones often declare them as "application/octet-stream" (or as old Excel), sometimes
+ * without the file extension.
  */
 export function detectAllowedType(buf: Buffer, declared: string, name: string, opts: { imagesOnly?: boolean } = {}): string | null {
   const sig = SIGNATURES.find((s) => s.test(buf));
+  const lower = name.toLowerCase();
   if (sig) {
     if (opts.imagesOnly && !sig.mime.startsWith('image/')) return null;
-    const allowed = ALLOWED_DECLARED[sig.mime] ?? [];
-    if (sig.mime === 'application/zip') return allowed.includes(declared) ? declared : null;
+    if (sig.mime === 'application/zip') {
+      const office = officeType(buf);
+      if (office) return office;
+      const allowed = ALLOWED_DECLARED[sig.mime] ?? [];
+      // A zip that does not look like an Office file is only accepted when declared as one (kept as before).
+      if (allowed.includes(declared) && declared !== 'application/zip') return declared;
+      if (declared === 'application/zip' || (UNKNOWN_DECLARED.has(declared) && (lower.endsWith('.xlsx') || lower.endsWith('.docx')))) return lower.endsWith('.docx') ? DOCX : lower.endsWith('.xlsx') ? XLSX : null;
+      return null;
+    }
     return sig.mime;
   }
   if (opts.imagesOnly) return null;
   // CSV / plain text: must decode as UTF-8 text without NUL bytes.
-  if ((declared === 'text/csv' || declared === 'text/plain' || name.toLowerCase().endsWith('.csv')) && !buf.subarray(0, 4096).includes(0)) return declared === 'text/plain' ? 'text/plain' : 'text/csv';
+  const textual = declared === 'text/csv' || declared === 'text/plain' || declared === 'text/comma-separated-values' || lower.endsWith('.csv');
+  if (textual && !buf.subarray(0, 4096).includes(0)) return declared === 'text/plain' && !lower.endsWith('.csv') ? 'text/plain' : 'text/csv';
   return null;
 }
