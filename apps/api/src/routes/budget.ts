@@ -27,7 +27,71 @@ budgetRouter.get('/budget', async (req, res) => {
     prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { budgetBaselinedAt: true, contractValue: true, currency: true } }),
     prisma.budgetRevision.findMany({ where: { projectId }, orderBy: { createdAt: 'desc' }, take: 20, select: { id: true, number: true, type: true, title: true, totalDelta: true, status: true, approvedAt: true, createdAt: true } }),
   ]);
-  res.json({ ...positions, baselinedAt: project.budgetBaselinedAt, contractValue: project.contractValue, currency: project.currency, revisions, basis: 'Amounts exclude tax unless the organisation treats tax as cost. Accrual basis: cost incurred = actual + accrued.' });
+  const boqValue = await projectBoqValue(projectId);
+  res.json({ ...positions, baselinedAt: project.budgetBaselinedAt, contractValue: project.contractValue, boqValue, currency: project.currency, revisions, basis: 'Amounts exclude tax unless the organisation treats tax as cost. Accrual basis: cost incurred = actual + accrued.' });
+});
+
+/** Value of the client BOQ (contract quantity × rate, before tax): what the project earns, to set against the budget. */
+async function projectBoqValue(projectId: string) {
+  const items = await prisma.boqItem.findMany({ where: { projectId }, select: { contractQty: true, unitRate: true } });
+  return money(items.reduce((a, i) => a.plus(D(i.contractQty).times(D(i.unitRate))), D(0)));
+}
+
+const KIND_CATEGORY: Record<string, string> = { MATERIAL: 'MATERIAL', LABOUR: 'LABOUR', EQUIPMENT: 'EQUIPMENT' };
+
+/**
+ * Budget proposal from the BOM, by cost code. Each BOM line goes to the cost code of the BOQ item its BOM item
+ * is linked to; a labour (or equipment / material) line goes to the cost code of that category under the same
+ * WBS element when there is one, so material and labour budgets stay apart. Lines whose BOM item has no BOQ
+ * link, or whose BOQ item has no cost code, are returned as unassigned for the user to place. Nothing is saved:
+ * the page fills the budget form, and the user reviews and saves it.
+ */
+budgetRouter.get('/budget/from-bom', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'budget.view', projectId);
+  const [codes, budget, lines, project, boqValue] = await Promise.all([
+    prisma.costCode.findMany({ where: { projectId }, orderBy: { code: 'asc' }, select: { id: true, code: true, name: true, category: true, wbsNodeId: true, isActive: true } }),
+    prisma.budgetLine.findMany({ where: { projectId }, select: { costCodeId: true, originalAmount: true } }),
+    prisma.bomLine.findMany({ where: { bomItem: { projectId } }, select: { kind: true, amount: true, bomItem: { select: { refCode: true, boqItem: { select: { itemCode: true, costCodeId: true } } } } } }),
+    prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { budgetBaselinedAt: true, contractValue: true } }),
+    projectBoqValue(projectId),
+  ]);
+  const byId = new Map(codes.map((c) => [c.id, c]));
+  const current = new Map(budget.map((b) => [b.costCodeId, D(b.originalAmount)]));
+  type Bucket = { amount: ReturnType<typeof D>; byKind: Record<string, ReturnType<typeof D>>; lines: number; unpriced: number; items: Set<string> };
+  const bucket = (): Bucket => ({ amount: D(0), byKind: {}, lines: 0, unpriced: 0, items: new Set() });
+  const per = new Map<string, Bucket>();
+  const unassigned = bucket();
+  const target = (costCodeId: string | null | undefined, kind: string) => {
+    const base = costCodeId ? byId.get(costCodeId) : undefined;
+    if (!base) return null;
+    const want = KIND_CATEGORY[kind];
+    if (!want || base.category === want) return base.id;
+    const sibling = codes.find((c) => c.isActive && c.wbsNodeId && c.wbsNodeId === base.wbsNodeId && c.category === want);
+    return sibling?.id ?? base.id;
+  };
+  for (const l of lines) {
+    const id = target(l.bomItem.boqItem?.costCodeId, l.kind);
+    const b = id ? (per.get(id) ?? bucket()) : unassigned;
+    b.lines++;
+    b.items.add(l.bomItem.refCode);
+    if (l.amount === null) b.unpriced++;
+    else {
+      b.amount = b.amount.plus(D(l.amount));
+      b.byKind[l.kind] = (b.byKind[l.kind] ?? D(0)).plus(D(l.amount));
+    }
+    if (id) per.set(id, b);
+  }
+  const out = (b: Bucket) => ({ bomAmount: money(b.amount), byKind: Object.fromEntries(Object.entries(b.byKind).map(([k, v]) => [k, money(v)])), lines: b.lines, unpricedLines: b.unpriced });
+  const rows = codes.map((c) => ({ costCodeId: c.id, code: c.code, name: c.name, category: c.category, isActive: c.isActive, currentBudget: money(current.get(c.id) ?? 0), ...out(per.get(c.id) ?? bucket()) }));
+  const total = [...per.values(), unassigned].reduce((a, b) => a.plus(b.amount), D(0));
+  res.json({
+    rows,
+    unassigned: { ...out(unassigned), items: [...unassigned.items].slice(0, 30) },
+    totals: { bomAmount: money(total), unpricedLines: lines.filter((l) => l.amount === null).length, bomLines: lines.length, currentBudget: money(sum(budget.map((b) => b.originalAmount.toString()))), boqValue, contractValue: project.contractValue.toString() },
+    baselined: !!project.budgetBaselinedAt,
+  });
 });
 
 const linesSchema = z.object({ lines: z.array(z.object({ costCodeId: z.string(), originalAmount: zDecimal(2), contingencyAmount: zDecimal(2).default('0'), notes: z.string().max(500).nullish() })).min(1) });

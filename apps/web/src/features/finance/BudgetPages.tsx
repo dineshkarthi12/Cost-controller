@@ -3,7 +3,7 @@ import { Link, useSearchParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Bar, BarChart, CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Lock, Pencil, Save } from 'lucide-react';
+import { Boxes, Lock, Pencil, Save } from 'lucide-react';
 import type { CostPosition } from '@toprock/shared';
 import { api, type Paged } from '../../lib/api';
 import { useAuth, useProjectId } from '../../lib/auth';
@@ -29,11 +29,159 @@ interface BudgetResp {
   byCategory: Array<{ category: string; position: CostPosition }>;
   baselinedAt: string | null;
   currency: string;
+  contractValue: string;
+  boqValue: string;
   basis: string;
   revisions: Array<{ id: string; number: string; type: string; title: string; totalDelta: string; status: string; createdAt: string }>;
 }
 
 const money = (v: string, c?: string) => <span className="tabular-nums">{formatMoney(v, c)}</span>;
+
+/** What the project earns (BOQ value, else contract value) against the original budget: the expected margin. Live while editing. */
+function MarginStrip({ boqValue, contractValue, budget, currency, editing }: { boqValue: string; contractValue: string; budget: string; currency: string; editing: boolean }) {
+  const revenue = Number(boqValue) > 0 ? Number(boqValue) : Number(contractValue);
+  if (!revenue) return null;
+  const margin = revenue - Number(budget);
+  const pct = (margin / revenue) * 100;
+  return (
+    <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-line bg-white px-4 py-3 text-sm">
+      <span>
+        <span className="text-muted">{Number(boqValue) > 0 ? 'BOQ value' : 'Contract value'}</span> <span className="font-medium tabular-nums">{formatMoney(String(revenue), currency)}</span>
+      </span>
+      <span>
+        <span className="text-muted">{editing ? 'Budget being edited' : 'Original budget'}</span> <span className="font-medium tabular-nums">{formatMoney(budget, currency)}</span>
+      </span>
+      <span className={cx('font-semibold', margin < 0 ? 'text-red-600' : 'text-emerald-700')}>
+        Expected margin {formatMoney(String(margin), currency)} ({pct.toFixed(1)}%)
+      </span>
+      <span className="text-xs text-muted">Before tax. Margin = {Number(boqValue) > 0 ? 'BOQ value' : 'contract value'} − budget.</span>
+    </div>
+  );
+}
+
+interface FromBom {
+  rows: Array<{ costCodeId: string; code: string; name: string; category: string; isActive: boolean; currentBudget: string; bomAmount: string; byKind: Record<string, string>; lines: number; unpricedLines: number }>;
+  unassigned: { bomAmount: string; byKind: Record<string, string>; lines: number; unpricedLines: number; items: string[] };
+  totals: { bomAmount: string; unpricedLines: number; bomLines: number; currentBudget: string; boqValue: string; contractValue: string };
+  baselined: boolean;
+}
+
+/** Proposes the original budget from the BOM, cost code by cost code; the budget form is filled for the user to review and save. */
+function FillFromBom({ projectId, currency, onApply }: { projectId: string; currency: string; onApply: (values: Record<string, string>) => void }) {
+  const [open, setOpen] = useState(false);
+  const [mode, setMode] = useState<'replace' | 'add'>('replace');
+  const [target, setTarget] = useState('');
+  const q = useQuery({ queryKey: ['p', 'budget-from-bom', projectId], queryFn: () => api.get<FromBom>(`/projects/${projectId}/budget/from-bom`), enabled: open });
+  const d = q.data;
+  const unassigned = Number(d?.unassigned.bomAmount ?? 0);
+  const proposal = useMemo(() => {
+    if (!d) return [];
+    return d.rows
+      .map((r) => {
+        const bom = Number(r.bomAmount) + (target === r.costCodeId ? unassigned : 0);
+        const next = mode === 'replace' ? bom : Number(r.currentBudget) + bom;
+        return { ...r, bom, next };
+      })
+      .filter((r) => r.bom > 0);
+  }, [d, mode, target, unassigned]);
+  const KIND: Record<string, string> = { MATERIAL: 'material', LABOUR: 'labour', EQUIPMENT: 'equipment', OTHER: 'other' };
+  return (
+    <>
+      <Button variant="outline" icon={<Boxes className="h-4 w-4" />} onClick={() => setOpen(true)}>
+        Fill from BOM
+      </Button>
+      <Dialog
+        open={open}
+        onOpenChange={setOpen}
+        size="lg"
+        title="Fill the original budget from the BOM"
+        description="BOM amounts are added up by cost code: each BOM item follows the cost code of its BOQ item; labour and equipment lines go to the labour or equipment cost code of the same WBS element when there is one. Nothing is saved until you press “Save original budget”."
+        footer={
+          <>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button
+              disabled={!proposal.length}
+              onClick={() => {
+                onApply(Object.fromEntries(proposal.map((r) => [r.costCodeId, r.next.toFixed(2)])));
+                setOpen(false);
+                toast.success(`Budget form filled for ${proposal.length} cost code${proposal.length === 1 ? '' : 's'}. Check the amounts, then press “Save original budget”.`, { duration: 8000 });
+              }}
+            >
+              Fill budget form
+            </Button>
+          </>
+        }
+      >
+        {q.isLoading || !d ? (
+          <LoadingBlock rows={4} />
+        ) : Number(d.totals.bomAmount) === 0 ? (
+          <p className="text-sm text-muted">
+            The BOM has no priced lines yet. Import the BOM and price it (BOQ → BOM: link materials and refresh rates) first.
+          </p>
+        ) : (
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap gap-4">
+              <label className="inline-flex items-center gap-2"><input type="radio" name="mode" checked={mode === 'replace'} onChange={() => setMode('replace')} /> Replace the budget of these cost codes with the BOM amount</label>
+              <label className="inline-flex items-center gap-2"><input type="radio" name="mode" checked={mode === 'add'} onChange={() => setMode('add')} /> Add the BOM amount to the current budget</label>
+            </div>
+            {d.totals.unpricedLines > 0 && (
+              <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                {d.totals.unpricedLines} of {d.totals.bomLines} BOM lines have no rate and are not included. Price them on the BOM page for a complete budget.
+              </p>
+            )}
+            {unassigned > 0 && (
+              <div className="rounded-lg border border-line p-3">
+                <p>
+                  {formatMoney(d.unassigned.bomAmount, currency)} from {d.unassigned.lines} line{d.unassigned.lines === 1 ? '' : 's'} has no cost code (BOM items {d.unassigned.items.join(', ')} are not linked to a BOQ item with a cost code). Put it under:
+                </p>
+                <Select
+                  className="mt-2 w-full sm:w-80"
+                  aria-label="Cost code for BOM lines without one"
+                  options={d.rows.filter((r) => r.isActive).map((r) => ({ value: r.costCodeId, label: `${r.code} — ${r.name}` }))}
+                  placeholder="Leave out of the budget"
+                  value={target}
+                  onChange={(e) => setTarget(e.target.value)}
+                />
+              </div>
+            )}
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead className="text-left text-xs text-muted uppercase">
+                  <tr>
+                    <th className="px-2 py-1.5 font-semibold">Cost code</th>
+                    <th className="px-2 py-1.5 text-right font-semibold">Current</th>
+                    <th className="px-2 py-1.5 text-right font-semibold">From BOM</th>
+                    <th className="px-2 py-1.5 text-right font-semibold">New budget</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-line">
+                  {proposal.map((r) => (
+                    <tr key={r.costCodeId} className="align-top">
+                      <td className="px-2 py-1.5">
+                        <span className="font-medium">{r.code}</span> {r.name}
+                        <span className="block text-xs text-muted">
+                          {Object.entries(r.byKind).map(([k, v]) => `${KIND[k] ?? k} ${formatMoney(v, currency)}`).join(' · ')}
+                          {target === r.costCodeId && unassigned > 0 ? ` · + ${formatMoney(d.unassigned.bomAmount, currency)} without a cost code` : ''}
+                          {r.unpricedLines ? ` · ${r.unpricedLines} unpriced` : ''}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(r.currentBudget, currency)}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums">{formatMoney(r.bom.toFixed(2), currency)}</td>
+                      <td className="px-2 py-1.5 text-right font-semibold tabular-nums">{formatMoney(r.next.toFixed(2), currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-muted">
+              Cost codes not in the BOM (subcontract, overheads, preliminaries…) keep their budget; enter those by hand. BOM total {formatMoney(d.totals.bomAmount, currency)}; BOQ value {formatMoney(d.totals.boqValue, currency)}.
+            </p>
+          </div>
+        )}
+      </Dialog>
+    </>
+  );
+}
 
 export function BudgetPage() {
   const projectId = useProjectId();
@@ -61,6 +209,20 @@ export function BudgetPage() {
         subtitle={q.data.basis}
         actions={
           <>
+            {!q.data.baselinedAt && can('budget.manage') && (
+              <FillFromBom
+                projectId={projectId}
+                currency={cur}
+                onApply={(values) => {
+                  setDraft((d) => {
+                    const next = { ...d };
+                    for (const [id, amount] of Object.entries(values)) next[id] = { contingencyAmount: next[id]?.contingencyAmount ?? '0', originalAmount: amount };
+                    return next;
+                  });
+                  setEditing(true);
+                }}
+              />
+            )}
             {!q.data.baselinedAt && can('budget.manage') && (editing ? <Button icon={<Save className="h-4 w-4" />} loading={save.isPending} onClick={() => save.mutate()}>Save original budget</Button> : <Button variant="outline" icon={<Pencil className="h-4 w-4" />} onClick={() => setEditing(true)}>Edit original budget</Button>)}
             {!q.data.baselinedAt && can('budget.approve') && !editing && <Button icon={<Lock className="h-4 w-4" />} onClick={() => setConfirmBaseline(true)}>Baseline budget</Button>}
             {q.data.baselinedAt && <Badge tone="success">Baselined {formatDate(q.data.baselinedAt)}</Badge>}
@@ -76,6 +238,7 @@ export function BudgetPage() {
         <KpiCard label="Remaining budget" value={formatMoneyCompact(t.remainingBudget, cur)} tone={Number(t.remainingBudget) < 0 ? 'danger' : 'primary'} />
         <KpiCard label="Pending (unapproved)" value={formatMoneyCompact(t.pending, cur)} sub={`VO exposure ${formatMoneyCompact(t.pendingVariationExposure, cur)}`} tone="warning" hint="Submitted costs awaiting approval and pending variations — excluded from actual cost and budget." />
       </div>
+      <MarginStrip boqValue={q.data.boqValue} contractValue={q.data.contractValue} budget={editing ? String(draftTotal) : t.originalBudget} currency={cur} editing={editing} />
       <Card bodyClassName="p-0" title="Cost codes" subtitle={editing ? `Editing original budget — total ${formatMoney(String(draftTotal), cur)}` : 'Click a cost code to see its ledger entries.'}>
         <DataTable
           rows={q.data.rows}
