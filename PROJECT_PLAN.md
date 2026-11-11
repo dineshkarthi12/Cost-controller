@@ -7,7 +7,7 @@
 |---|---|
 | Existing code | None. The repository was empty (no commits) when work started. |
 | Existing stack | None, so the recommended stack from the brief is adopted unchanged. |
-| Brand assets | The TOPROCK GLOBAL logo was supplied as an image attachment. It is stored unmodified at `assets/brand/toprock-logo-original.png`. Web copies in `apps/web/public/brand/` are **cropped to remove surrounding whitespace and scaled proportionally**. They are not redrawn, recoloured or distorted. |
+| Brand assets | The TOPROCK GLOBAL logo was supplied as an image attachment. The current logo (stacked: star above the TOPROCK GLOBAL wordmark, supplied 11 Nov 2026) is stored unmodified at `assets/brand/toprock-logo-original.jpg`. Web and PDF copies (`apps/web/public/brand/toprock-logo.png`, `apps/api/assets/toprock-logo.png`) are **cropped to remove surrounding whitespace, with the white background made transparent**, at full resolution. The star mark (`toprock-mark.png`, favicon, app icon) is cropped from the same artwork. Nothing is redrawn, recoloured or distorted. |
 | UI reference | The supplied dashboard/mobile collage is used as visual direction only. Each screen is built as a real page from reusable components. |
 | Runtime available | Node 22, npm 10, PostgreSQL 16 and Chromium + Playwright 1.63. |
 

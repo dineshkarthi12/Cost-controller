@@ -15,7 +15,7 @@ function AuthLayout({ title, subtitle, children }: { title: string; subtitle?: s
       <div className="flex flex-1 items-center justify-center px-4 py-10">
         <div className="w-full max-w-md">
           <div className="mb-8 flex justify-center">
-            <img src="/brand/toprock-logo.png" alt="TOPROCK GLOBAL" className="h-14 w-auto" />
+            <img src="/brand/toprock-logo.png" alt="TOPROCK GLOBAL" className="h-28 w-auto" />
           </div>
           <div className="card p-6 sm:p-8">
             <h1 className="text-xl font-semibold text-ink">{title}</h1>

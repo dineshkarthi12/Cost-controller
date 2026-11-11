@@ -38,7 +38,7 @@ export function renderPdf(spec: PdfSpec): Promise<Buffer> {
     doc.on('end', () => resolve(Buffer.concat(chunks)));
     doc.on('error', reject);
     const W = doc.page.width - 80;
-    if (LOGO) doc.image(LOGO, 40, 32, { width: 150 });
+    if (LOGO) doc.image(LOGO, 40, 26, { fit: [110, 52] }); // stacked logo (star over the wordmark), kept above the header rule
     doc.fillColor(NAVY).fontSize(16).font('Helvetica-Bold').text(spec.title, 40, 36, { width: W, align: 'right' });
     if (spec.subtitle) doc.fontSize(9).font('Helvetica').fillColor(GREY).text(spec.subtitle, 40, 58, { width: W, align: 'right' });
     doc.moveTo(40, 82).lineTo(40 + W, 82).strokeColor(NAVY).lineWidth(1).stroke();
@@ -139,7 +139,7 @@ export function renderPack(spec: { title: string; subtitle?: string; blocks: Pac
     doc.on('error', reject);
     const W = doc.page.width - 80;
     const bottom = () => doc.page.height - 60;
-    if (LOGO) doc.image(LOGO, 40, 32, { width: 150 });
+    if (LOGO) doc.image(LOGO, 40, 26, { fit: [110, 52] }); // stacked logo (star over the wordmark), kept above the header rule
     doc.fillColor(NAVY).fontSize(16).font('Helvetica-Bold').text(spec.title, 40, 36, { width: W, align: 'right' });
     if (spec.subtitle) doc.fontSize(9).font('Helvetica').fillColor(GREY).text(spec.subtitle, 40, 58, { width: W, align: 'right' });
     doc.moveTo(40, 82).lineTo(40 + W, 82).strokeColor(NAVY).lineWidth(1).stroke();
