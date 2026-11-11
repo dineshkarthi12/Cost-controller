@@ -56,7 +56,20 @@ export const IMPORT_SPECS: Record<Kind, { title: string; projectScoped: boolean;
     title: 'Suppliers & contractors',
     projectScoped: false,
     permission: 'material.manage',
-    fields: [txt('code', 'Code', true), txt('name', 'Name', true), txt('kinds', 'Roles (comma separated)', true, ['type', 'role', 'roles']), txt('contactName', 'Contact'), txt('email', 'Email'), txt('phone', 'Phone'), txt('taxId', 'Tax ID', false, ['gstin', 'gst']), txt('address', 'Address'), num('paymentTermsDays', 'Payment terms (days)'), txt('supplies', 'Supplies / trade (comma separated)', false, ['supplies', 'trade', 'category'])],
+    // Code and roles may be left out: codes are generated (SUP-0001…) and the role defaults to Supplier
+    // (or follows "SUPPLIERS" / "CONTRACTORS" heading rows in the sheet).
+    fields: [
+      txt('code', 'Code', false, ['vendor code', 'supplier code', 'party code', 'vendor id', 'supplier id', 'contractor code']),
+      txt('name', 'Name', true, ['name of supplier', 'supplier name', 'name of the supplier', 'vendor name', 'name of vendor', 'name of the vendor', 'company name', 'name of company', 'name of the company', 'firm name', 'name of firm', 'name of the firm', 'party name', 'name of party', 'contractor name', 'name of contractor', 'name of the contractor', 'agency name', 'name of agency', 'name of supplier contractor', 'supplier contractor name', 'name of the supplier contractor', 'supplier contractor', 'supplier', 'vendor', 'contractor', 'company', 'firm', 'agency', 'party']),
+      txt('kinds', 'Roles (comma separated)', false, ['type', 'role', 'roles', 'vendor type', 'party type', 'supplier type', 'type of vendor', 'type of party', 'classification']),
+      txt('contactName', 'Contact', false, ['contact person', 'contact name', 'person', 'concerned person', 'name of contact person', 'contact person name', 'representative', 'spoc', 'poc', 'owner', 'proprietor']),
+      txt('email', 'Email', false, ['e mail', 'email id', 'e mail id', 'mail id', 'mail', 'email address']),
+      txt('phone', 'Phone', false, ['mobile', 'mobile no', 'mobile number', 'contact no', 'contact number', 'phone no', 'phone number', 'cell', 'cell no', 'whatsapp', 'whatsapp no', 'tel', 'telephone', 'mob', 'mob no', 'contact details', 'ph no']),
+      txt('taxId', 'Tax ID', false, ['gstin', 'gst', 'gst no', 'gst number', 'gstin no', 'gstin number', 'gst reg no', 'gst registration no', 'gstn']),
+      txt('address', 'Address', false, ['location', 'city', 'place', 'office address', 'address location']),
+      num('paymentTermsDays', 'Payment terms (days)', false, ['payment terms', 'credit days', 'credit period', 'credit period days', 'payment days', 'credit']),
+      txt('supplies', 'Supplies / trade (comma separated)', false, ['supplies', 'trade', 'category', 'scope', 'scope of work', 'material', 'materials', 'nature of work', 'work', 'work type', 'type of work', 'items', 'item', 'services', 'service', 'product', 'products', 'specialisation', 'specialization', 'supply', 'package']),
+    ],
   },
   OPENING_STOCK: {
     title: 'Opening stock',
@@ -66,18 +79,51 @@ export const IMPORT_SPECS: Record<Kind, { title: string; projectScoped: boolean;
   },
 };
 
-function norm(s: string) {
-  return s.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+function norm(s: string | undefined | null) {
+  return (s ?? '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
 }
 
 function autoMap(headers: string[], fields: FieldSpec[]): Record<string, number> {
   const map: Record<string, number> = {};
+  const used = new Set<number>();
   for (const f of fields) {
     const candidates = [f.key, f.label, ...(f.aliases ?? [])].map(norm);
-    const idx = headers.findIndex((h) => candidates.includes(norm(h)));
-    if (idx >= 0) map[f.key] = idx;
+    const idx = headers.findIndex((h, i) => !used.has(i) && candidates.includes(norm(h)));
+    if (idx >= 0) {
+      map[f.key] = idx;
+      used.add(idx);
+    }
   }
   return map;
+}
+
+/**
+ * The header row: lists often start with a title, the project name or a blank row, so the row among the
+ * first 20 whose cells name the most fields is taken (the first row when none does).
+ */
+function findHeaderRow(table: string[][], fields: FieldSpec[]): number {
+  let best = 0;
+  let bestScore = 0;
+  for (let i = 0; i < Math.min(20, table.length); i++) {
+    const score = Object.keys(autoMap(table[i], fields)).length;
+    if (score > bestScore) {
+      best = i;
+      bestScore = score;
+    }
+  }
+  return best;
+}
+
+/** "Sub-contractor", "Labour contractor", "Vendor", "Dealer" … → the party roles used by the app. */
+export function readRoles(text: string): string[] {
+  const t = text.toLowerCase();
+  const out = new Set<string>();
+  if (/contractor|sub ?con|subcon|labou?r|work ?order|applicator|installer|fabricator/.test(t)) out.add('SUBCONTRACTOR');
+  if (/supplier|vendor|dealer|distributor|manufacturer|trader|stockist|supply|seller|agency|agencies/.test(t)) out.add('SUPPLIER');
+  if (/client|owner|employer/.test(t)) out.add('CLIENT');
+  if (/consultant|architect|pmc|designer|structural engineer/.test(t)) out.add('CONSULTANT');
+  for (const k of ['CLIENT', 'CONSULTANT', 'SUPPLIER', 'SUBCONTRACTOR']) if (t.toUpperCase().split(/[^A-Z]+/).includes(k)) out.add(k);
+  return [...out];
 }
 
 async function readTable(file: Express.Multer.File): Promise<string[][]> {
@@ -92,8 +138,10 @@ async function readTable(file: Express.Multer.File): Promise<string[][]> {
   const ws = wb.worksheets[0];
   if (!ws) throw validationError('The file has no worksheet');
   const rows: string[][] = [];
-  ws.eachRow({ includeEmpty: false }, (row) => {
-    const vals = (row.values as unknown[]).slice(1).map((v) => {
+  // Empty rows are kept (as empty) so row numbers match the Excel sheet; they are skipped later.
+  ws.eachRow({ includeEmpty: true }, (row) => {
+    // Array.from fills the holes ExcelJS leaves for empty cells, so every column has a value.
+    const vals = Array.from(row.values as unknown[]).slice(1).map((v) => {
       if (v === null || v === undefined) return '';
       if (typeof v === 'object' && v !== null && 'result' in v) return String((v as { result: unknown }).result ?? '');
       if (typeof v === 'object' && v !== null && 'text' in v) return String((v as { text: unknown }).text ?? '');
@@ -120,8 +168,12 @@ async function validateRows(ctx: AccessContext, kind: Kind, projectId: string | 
     for (const f of spec.fields) {
       const v = values[f.key] ?? '';
       if (f.required && !v) errors.push(`${f.label} is required`);
-      if (v && f.type === 'number' && !/^-?\d+(\.\d+)?$/.test(v.replace(/,/g, ''))) errors.push(`${f.label} must be a number`);
-      if (f.type === 'number' && v) values[f.key] = v.replace(/,/g, '');
+      if (f.type === 'number' && v) {
+        // "30 days", "₹ 1,250.50" → the number.
+        const m = /^[^\d-]*(-?\d[\d,]*(\.\d+)?)\s*[a-z.%]*\s*$/i.exec(v.trim());
+        if (m) values[f.key] = m[1].replace(/,/g, '');
+        else errors.push(`${f.label} must be a number`);
+      }
     }
     return { row: i + 2, values, errors, action: 'CREATE' };
   });
@@ -155,14 +207,30 @@ async function validateRows(ctx: AccessContext, kind: Kind, projectId: string | 
       (kind === 'MATERIALS' ? await prisma.material.findMany({ where: { orgId: ctx.orgId }, select: { code: true } }) : await prisma.party.findMany({ where: { orgId: ctx.orgId }, select: { code: true } })).map((x) => x.code.toUpperCase()),
     );
     const uoms = new Set((await prisma.uom.findMany({ where: { orgId: ctx.orgId } })).map((u) => u.code));
+    const generated = new Set<string>();
     for (const r of out) {
+      if (kind === 'SUPPLIERS') {
+        const raw = r.values.kinds ?? '';
+        const roles = raw ? readRoles(raw) : [r.values._sectionRole || 'SUPPLIER'];
+        if (raw && !roles.length) r.errors.push(`Role “${raw}” not understood: use Supplier, Subcontractor, Client or Consultant`);
+        r.values.kinds = roles.join(',');
+        if (r.values.email) {
+          // Lists often hold two addresses or extra text: keep the first address.
+          const e = /[^\s,;/<>()]+@[^\s,;/<>()]+\.[a-z]{2,}/i.exec(r.values.email);
+          if (e) r.values.email = e[0];
+          else r.errors.push('Invalid email');
+        }
+        if (!r.values.code) {
+          const prefix = roles[0] === 'SUBCONTRACTOR' ? 'SUB' : roles[0] === 'CLIENT' ? 'CLI' : roles[0] === 'CONSULTANT' ? 'CON' : 'SUP';
+          let n = 1;
+          while (existing.has(`${prefix}-${String(n).padStart(4, '0')}`) || generated.has(`${prefix}-${String(n).padStart(4, '0')}`)) n++;
+          r.values.code = `${prefix}-${String(n).padStart(4, '0')}`;
+          generated.add(r.values.code);
+        }
+        delete r.values._sectionRole;
+      }
       if (existing.has(r.values.code?.toUpperCase())) r.errors.push('Code already exists (duplicate)');
       if (kind === 'MATERIALS' && r.values.unit && !uoms.has(r.values.unit)) r.errors.push(`Unknown unit ${r.values.unit}`);
-      if (kind === 'SUPPLIERS') {
-        const kinds = (r.values.kinds ?? '').split(',').map((k) => k.trim().toUpperCase()).filter(Boolean);
-        if (kinds.some((k) => !['CLIENT', 'CONSULTANT', 'SUPPLIER', 'SUBCONTRACTOR'].includes(k))) r.errors.push('Roles must be CLIENT, CONSULTANT, SUPPLIER or SUBCONTRACTOR');
-        if (r.values.email && !/^\S+@\S+\.\S+$/.test(r.values.email)) r.errors.push('Invalid email');
-      }
     }
   }
   if (kind === 'OPENING_STOCK') {
@@ -244,13 +312,47 @@ importsRouter.post('/preview', upload.single('file'), async (req, res) => {
     }
   }
   table ??= await readTable(req.file);
-  if (table.length < 2) throw validationError('The file needs a header row and at least one data row');
-  const headers = table[0];
   const spec = IMPORT_SPECS[body.kind];
+  const headerAt = findHeaderRow(table, spec.fields);
+  if (headerAt > 0) notes.push(`Column names read from row ${headerAt + 1}; the ${headerAt === 1 ? 'row' : `${headerAt} rows`} above (title) skipped.`);
+  if (table.length < headerAt + 2) throw validationError('The file needs a header row and at least one data row');
+  const headers = table[headerAt];
   const mapping: Record<string, number> = body.mapping ? JSON.parse(body.mapping) : autoMap(headers, spec.fields);
   const missing = spec.fields.filter((f) => f.required && mapping[f.key] === undefined);
-  const records = table.slice(1).map((r) => Object.fromEntries(spec.fields.map((f) => [f.key, mapping[f.key] !== undefined ? (r[mapping[f.key]] ?? '').trim() : ''])));
-  const rows = missing.length ? records.map((values, i) => ({ row: i + 2, values, errors: [`Map required columns: ${missing.map((m) => m.label).join(', ')}`], action: 'SKIP' as const })) : await validateRows(ctx, body.kind, projectId, records);
+  // Each record keeps its row number in the file (_row) for the preview and the error report.
+  let records = table
+    .slice(headerAt + 1)
+    .map((r, i): Record<string, string> => ({ ...Object.fromEntries(spec.fields.map((f) => [f.key, mapping[f.key] !== undefined ? (r[mapping[f.key]] ?? '').trim() : ''])), _row: String(i + headerAt + 2) }))
+    .filter((v) => Object.entries(v).some(([k, x]) => k !== '_row' && x));
+  if (body.kind === 'SUPPLIERS' && !missing.length) {
+    // Heading rows such as "SUPPLIERS" or "SUB-CONTRACTORS" set the role of the rows below them; total rows are dropped.
+    let sectionRole = '';
+    const headings: string[] = [];
+    // A heading names a group in capitals ("SUPPLIERS", "SUB-CONTRACTORS", "LIST OF VENDORS") and has nothing else on its row.
+    // A company named "Sri Balaji Suppliers" with its details filled in is never a heading.
+    const isHeading = (v: Record<string, string>) => {
+      const others = Object.entries(v).filter(([k, x]) => !['name', 'code', '_row'].includes(k) && x).length;
+      const letters = v.name.replace(/[^a-z]/gi, '');
+      const shouty = letters.length > 0 && letters === letters.toUpperCase();
+      return !others && !v.code && v.name.split(/\s+/).length <= 6 && shouty && /\b(suppliers|vendors|(sub[\s-]*)?contractors|consultants|clients|supplier|vendor|contractor)\b/i.test(v.name);
+    };
+    records = records.filter((v) => {
+      if (isHeading(v)) {
+        sectionRole = readRoles(v.name)[0] ?? sectionRole;
+        headings.push(v.name);
+        return false;
+      }
+      if (/^(grand )?total\b/i.test(v.name)) return false;
+      if (sectionRole) v._sectionRole = sectionRole;
+      return true;
+    });
+    if (headings.length) notes.push(`Heading rows used to set the role of the rows below them: ${headings.slice(0, 8).join(', ')}.`);
+    if (mapping.code === undefined) notes.push('No code column: codes are generated (SUP-0001, SUB-0001…).');
+    if (mapping.kinds === undefined && !headings.length) notes.push('No role column: everyone is imported as a Supplier. Add a “Type” column (Supplier / Contractor) to set roles.');
+  }
+  const rowNos = records.map((v) => Number(v._row));
+  for (const v of records) delete v._row;
+  const rows = missing.length ? records.map((values, i) => ({ row: rowNos[i], values, errors: [`Map required columns: ${missing.map((m) => m.label).join(', ')}`], action: 'SKIP' as const })) : (await validateRows(ctx, body.kind, projectId, records)).map((r, i) => ({ ...r, row: rowNos[i] }));
   const summary = { total: rows.length, valid: rows.filter((r) => r.action === 'CREATE').length, invalid: rows.filter((r) => r.action === 'SKIP').length, headers, missingRequired: missing.map((m) => m.key), notes, ...(totals ?? {}) };
   const job = await prisma.importJob.create({ data: { orgId: ctx.orgId, projectId, kind: body.kind, fileName: req.file.originalname.slice(0, 200), mapping, rows: rows as never, summary, createdById: ctx.user.id } });
   res.status(201).json({ id: job.id, summary, mapping, fields: spec.fields, rows: rows.slice(0, 5000) });
