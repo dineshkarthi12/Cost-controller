@@ -22,7 +22,7 @@ function AuthLayout({ title, subtitle, children }: { title: string; subtitle?: s
             {subtitle && <p className="mt-1 text-sm text-muted">{subtitle}</p>}
             <div className="mt-6">{children}</div>
           </div>
-          <p className="mt-6 text-center text-xs text-muted">Construction Cost Control Management · Authorised users only</p>
+          <p className="mt-6 text-center text-xs text-muted">Construction &amp; Interior Fit-out Cost Control · Authorised users only</p>
         </div>
       </div>
     </div>

@@ -116,7 +116,7 @@ export function renderPdf(spec: PdfSpec): Promise<Buffer> {
     for (let i = range.start; i < range.start + range.count; i++) {
       doc.switchToPage(i);
       doc.page.margins.bottom = 0;
-      doc.fontSize(7).fillColor(GREY).text(`TOPROCK GLOBAL — Construction Cost Control · Generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC · Page ${i + 1} of ${range.count}`, 40, doc.page.height - 30, { width: W, align: 'center' });
+      doc.fontSize(7).fillColor(GREY).text(`TOPROCK GLOBAL — Construction & Interior Fit-out Cost Control · Generated ${new Date().toISOString().slice(0, 16).replace('T', ' ')} UTC · Page ${i + 1} of ${range.count}`, 40, doc.page.height - 30, { width: W, align: 'center' });
     }
     doc.end();
   });
