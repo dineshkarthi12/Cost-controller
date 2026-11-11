@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
-import { computeCpm, fromDayNumber, ScheduleCycleError, toDayNumber, topologicalOrder, type CpmDependency } from '@toprock/shared';
+import { computeCpmOnCalendar, D, fromDayNumber, isValidWorkWeek, ScheduleCycleError, toDayNumber, topologicalOrder, WorkCalendar, type CpmDependency } from '@toprock/shared';
+import type { Db } from '../lib/prisma.js';
 import { prisma, transaction } from '../lib/prisma.js';
 import { param, parseBody } from '../lib/http.js';
 import { conflict, notFound, validationError } from '../lib/errors.js';
@@ -70,6 +71,45 @@ scheduleRouter.delete('/dependencies/:id', async (req, res) => {
   res.json({ ok: true });
 });
 
+/** The project's working calendar (work week and holidays). */
+export async function projectCalendar(db: Db, projectId: string) {
+  const [p, hols] = await Promise.all([
+    db.project.findUniqueOrThrow({ where: { id: projectId }, select: { workWeek: true } }),
+    db.projectHoliday.findMany({ where: { projectId }, orderBy: { date: 'asc' }, select: { date: true, name: true } }),
+  ]);
+  return { workWeek: p.workWeek, holidays: hols.map((h) => ({ date: isoDate(h.date)!, name: h.name })), calendar: new WorkCalendar(p.workWeek, hols.map((h) => h.date)) };
+}
+
+scheduleRouter.get('/calendar', async (req, res) => {
+  const projectId = param(req, 'projectId');
+  assertCan(ctxOf(req), 'progress.view', projectId);
+  const { workWeek, holidays } = await projectCalendar(prisma, projectId);
+  res.json({ workWeek, holidays });
+});
+
+const calendarSchema = z.object({
+  workWeek: z.string().refine(isValidWorkWeek, 'Choose at least one working day'),
+  holidays: z.array(z.object({ date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), name: z.string().trim().min(1, 'Name the holiday').max(80) })).max(400),
+});
+
+/** Saves the work week and the holiday list (replacing the list). Forecast dates and floats then count working days only. */
+scheduleRouter.put('/calendar', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'progress.manage', projectId);
+  const body = parseBody(calendarSchema, req.body);
+  const dates = body.holidays.map((h) => h.date);
+  if (new Set(dates).size !== dates.length) throw validationError('The same date is listed twice');
+  await transaction(async (tx) => {
+    const before = await projectCalendar(tx, projectId);
+    await tx.project.update({ where: { id: projectId }, data: { workWeek: body.workWeek } });
+    await tx.projectHoliday.deleteMany({ where: { projectId } });
+    if (body.holidays.length) await tx.projectHoliday.createMany({ data: body.holidays.map((h) => ({ projectId, date: new Date(`${h.date}T00:00:00Z`), name: h.name })) });
+    await audit(tx, ctx, { action: 'UPDATE', entityType: 'project', entityId: projectId, projectId, summary: `Schedule calendar: work week ${body.workWeek}, ${body.holidays.length} holiday(s)`, before: { workWeek: before.workWeek, holidays: before.holidays }, after: body });
+  });
+  res.json(body);
+});
+
 /** Critical path forecast as of today (or ?asOf=YYYY-MM-DD). */
 scheduleRouter.get('/cpm', async (req, res) => {
   const projectId = param(req, 'projectId');
@@ -80,16 +120,23 @@ scheduleRouter.get('/cpm', async (req, res) => {
     prisma.activityDependency.findMany({ where: { successor: { projectId } } }),
   ]);
   if (!acts.length) return res.json({ asOf: fromDayNumber(asOf), activities: [], criticalPath: [], dependencies: 0, skipped: [] });
-  const out = computeCpm(
+  const { workWeek, holidays, calendar } = await projectCalendar(prisma, projectId);
+  const out = computeCpmOnCalendar(
     acts.map((a) => ({ id: a.id, code: a.code, plannedStart: day(a.plannedStart), plannedFinish: day(a.plannedFinish), actualStart: day(a.actualStart), actualFinish: day(a.actualFinish), percentComplete: Number(a.percentComplete), isMilestone: a.isMilestone })),
     deps.map((d) => ({ predecessorId: d.predecessorId, successorId: d.successorId, type: d.type as CpmDependency['type'], lagDays: d.lagDays })),
     asOf,
+    calendar,
   );
   const meta = new Map(acts.map((a) => [a.id, a]));
   const plannedFinish = Math.max(...acts.filter((a) => a.plannedFinish).map((a) => toDayNumber(a.plannedFinish!)));
+  const baselineFinish = Math.max(...acts.filter((a) => a.baselineFinish).map((a) => toDayNumber(a.baselineFinish!)));
   res.json({
     asOf: fromDayNumber(asOf),
     dependencies: deps.length,
+    calendar: { workWeek, holidays: holidays.length, unit: calendar.isSevenDay ? 'calendar days' : 'working days' },
+    baselineFinish: Number.isFinite(baselineFinish) ? fromDayNumber(baselineFinish) : null,
+    /** Calendar days the forecast finish is after (+) or before (−) the baseline finish. */
+    slipVsBaselineDays: Number.isFinite(baselineFinish) ? out.projectFinish - baselineFinish : null,
     projectStart: fromDayNumber(out.projectStart),
     forecastFinish: fromDayNumber(out.projectFinish),
     plannedFinish: Number.isFinite(plannedFinish) ? fromDayNumber(plannedFinish) : null,
@@ -115,6 +162,9 @@ scheduleRouter.get('/cpm', async (req, res) => {
         freeFloat: r.freeFloat,
         critical: r.critical,
         finishVarianceDays: a.plannedFinish ? r.earlyFinish - toDayNumber(a.plannedFinish) : null,
+        baselineStart: isoDate(a.baselineStart),
+        baselineFinish: isoDate(a.baselineFinish),
+        baselineVarianceDays: a.baselineFinish ? r.earlyFinish - toDayNumber(a.baselineFinish) : null,
       };
     }),
   });
@@ -140,7 +190,7 @@ scheduleRouter.post('/import/preview', upload.single('file'), async (req, res) =
   if (!req.file) throw validationError('Choose an Excel (.xlsx), MS Project (.xml) or Primavera (.xer) file');
   let parsed: ParsedSchedule;
   try {
-    parsed = await parseScheduleFile(req.file.originalname, req.file.buffer);
+    parsed = await parseScheduleFile(req.file.originalname, req.file.buffer, (await projectCalendar(prisma, projectId)).calendar);
   } catch (e) {
     throw validationError((e as Error).message);
   }
@@ -276,4 +326,85 @@ scheduleRouter.get('/baseline', async (req, res) => {
     changedSinceBaseline: acts.filter((a) => (a.baselineStart || a.baselineFinish) && (!same(a.plannedStart, a.baselineStart) || !same(a.plannedFinish, a.baselineFinish))).length,
     lastSavedAt: last?.createdAt ?? null,
   });
+});
+
+// ───────── Activities from BOQ items ─────────
+
+/** BOQ items of the project with whether an activity already covers them. */
+scheduleRouter.get('/from-boq', async (req, res) => {
+  const projectId = param(req, 'projectId');
+  assertCan(ctxOf(req), 'progress.view', projectId);
+  const [items, linked] = await Promise.all([
+    prisma.boqItem.findMany({ where: { projectId }, orderBy: { itemCode: 'asc' }, select: { id: true, itemCode: true, description: true, section: true, unit: true, contractQty: true, revisedQty: true, unitRate: true, revisedRate: true } }),
+    prisma.activity.findMany({ where: { projectId, boqItemId: { not: null } }, select: { code: true, boqItemId: true } }),
+  ]);
+  const by = new Map<string, string[]>();
+  for (const a of linked) by.set(a.boqItemId!, [...(by.get(a.boqItemId!) ?? []), a.code]);
+  res.json(
+    items.map((i) => {
+      const qty = i.revisedQty ?? i.contractQty;
+      const rate = i.revisedRate ?? i.unitRate;
+      return { id: i.id, itemCode: i.itemCode, description: i.description, section: i.section, unit: i.unit, qty: qty.toString(), amount: D(qty).times(D(rate)).toFixed(2), activities: by.get(i.id) ?? [] };
+    }),
+  );
+});
+
+const fromBoqSchema = z.object({
+  boqItemIds: z.array(z.string().min(1)).min(1, 'Choose at least one BOQ item').max(2000),
+  /** AMOUNT: weight = BOQ amount in lakhs (physical progress follows value); EQUAL: weight 1 each. */
+  weightBy: z.enum(['AMOUNT', 'EQUAL']).default('AMOUNT'),
+});
+
+/**
+ * One activity per chosen BOQ item, linked to it, with its unit, quantity, cost code and WBS. Progress
+ * entered on the activity then moves the BOQ executed quantity. Dates and links are added afterwards
+ * (by hand or with the Excel import, matched by activity code).
+ */
+scheduleRouter.post('/from-boq', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'progress.manage', projectId);
+  const { boqItemIds, weightBy } = parseBody(fromBoqSchema, req.body);
+  const out = await transaction(async (tx) => {
+    const items = await tx.boqItem.findMany({ where: { projectId, id: { in: boqItemIds } }, orderBy: { itemCode: 'asc' } });
+    if (items.length !== new Set(boqItemIds).size) throw validationError('Some BOQ items are not in this project');
+    const existing = await tx.activity.findMany({ where: { projectId }, select: { code: true, boqItemId: true, sortOrder: true } });
+    const codes = new Set(existing.map((a) => a.code.toLowerCase()));
+    const covered = new Set(existing.map((a) => a.boqItemId).filter(Boolean));
+    let order = Math.max(0, ...existing.map((a) => a.sortOrder));
+    const created: string[] = [];
+    const skipped: string[] = [];
+    for (const i of items) {
+      if (covered.has(i.id)) {
+        skipped.push(i.itemCode);
+        continue;
+      }
+      // BOQ codes that are only numbers (3.01) get "B-" so activity IDs read clearly; codes with letters (B-402) are used as they are.
+      const base = /^\d/.test(i.itemCode.trim()) ? `B-${i.itemCode.trim()}` : i.itemCode.trim();
+      let code = base.replace(/\s+/g, '-').slice(0, 40);
+      for (let n = 2; codes.has(code.toLowerCase()); n++) code = `${base}-${n}`.replace(/\s+/g, '-').slice(0, 40);
+      codes.add(code.toLowerCase());
+      const qty = i.revisedQty ?? i.contractQty;
+      const amount = D(qty).times(D(i.revisedRate ?? i.unitRate));
+      const weight = weightBy === 'AMOUNT' ? amount.div(100000).toDecimalPlaces(2) : D(1);
+      await tx.activity.create({
+        data: {
+          projectId,
+          code,
+          name: i.description.replace(/\s+/g, ' ').trim().slice(0, 300),
+          boqItemId: i.id,
+          costCodeId: i.costCodeId,
+          wbsNodeId: i.wbsNodeId,
+          unit: i.unit,
+          plannedQty: qty,
+          weight: weight.lt(0.01) ? '0.01' : weight.toString(),
+          sortOrder: ++order,
+        },
+      });
+      created.push(code);
+    }
+    if (created.length) await audit(tx, ctx, { action: 'CREATE', entityType: 'activity', projectId, summary: `${created.length} activit${created.length === 1 ? 'y' : 'ies'} created from BOQ items (weight by ${weightBy === 'AMOUNT' ? 'BOQ amount' : 'equal'})` });
+    return { created: created.length, codes: created, skipped };
+  });
+  res.status(201).json(out);
 });

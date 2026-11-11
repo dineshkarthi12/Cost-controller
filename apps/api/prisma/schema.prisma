@@ -344,6 +344,8 @@ model Project {
   status                String    @default("PLANNING")
   closeoutStatus        String    @default("NOT_STARTED")
   budgetBaselinedAt     DateTime?
+  /// Working calendar for the schedule: Monday … Sunday, "1" = worked. New projects: Sunday off.
+  workWeek              String    @default("1111110")
   isDemo                Boolean   @default(false)
   createdById           String?
   createdAt             DateTime  @default(now())
@@ -424,6 +426,7 @@ model Project {
   rel_workflowDefinition_project WorkflowDefinition[] @relation("WorkflowDefinition_projectId")
   rel_approvalRequest_project ApprovalRequest[] @relation("ApprovalRequest_projectId")
   rel_closeout_project Closeout[] @relation("Closeout_projectId")
+  rel_projectHoliday_project ProjectHoliday[] @relation("ProjectHoliday_projectId")
 }
 
 model WbsNode {
@@ -3188,4 +3191,17 @@ model WorkReportItem {
   project Project?   @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([reportId])
+}
+
+/// Non-working dates of a project's schedule calendar (festivals, national holidays, site shutdowns).
+model ProjectHoliday {
+  id        String   @id @default(cuid())
+  projectId String
+  date      DateTime @db.Date
+  name      String
+  createdAt DateTime @default(now())
+
+  project Project @relation("ProjectHoliday_projectId", fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, date])
 }

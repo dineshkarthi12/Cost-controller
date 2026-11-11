@@ -3,6 +3,7 @@
  * Both are converted to one neutral structure; nothing is written until the user commits the preview.
  */
 import { XMLParser } from 'fast-xml-parser';
+import type { WorkCalendar } from '@toprock/shared';
 import { parseScheduleExcel } from './scheduleExcel.js';
 
 export interface ImportedActivity {
@@ -194,11 +195,11 @@ export function parseXer(text: string): ParsedSchedule {
 }
 
 /** Detects the format from content and file name: Excel (.xlsx), MS Project XML or Primavera XER. */
-export async function parseScheduleFile(fileName: string, buf: Buffer): Promise<ParsedSchedule> {
+export async function parseScheduleFile(fileName: string, buf: Buffer, calendar?: WorkCalendar): Promise<ParsedSchedule> {
   if (/\.xls$/i.test(fileName)) throw new Error('Old .xls files cannot be read. Open the file in Excel and save it as .xlsx (Excel Workbook).');
   const isZip = buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4b;
   const text = isZip ? '' : buf.toString('utf8').replace(/^﻿/, '');
-  const parsed = isZip || /\.xlsx$/i.test(fileName) ? await parseScheduleExcel(buf) : /\.xer$/i.test(fileName) || text.startsWith('ERMHDR') ? parseXer(text) : /^\s*</.test(text) ? parseMsProjectXml(text) : null;
+  const parsed = isZip || /\.xlsx$/i.test(fileName) ? await parseScheduleExcel(buf, calendar) : /\.xer$/i.test(fileName) || text.startsWith('ERMHDR') ? parseXer(text) : /^\s*</.test(text) ? parseMsProjectXml(text) : null;
   if (!parsed) throw new Error('Upload an Excel schedule (.xlsx), a Microsoft Project XML file (.xml) or a Primavera P6 export (.xer)');
   if (parsed.activities.length > MAX_IMPORT_ACTIVITIES) throw new Error(`Imports are limited to ${MAX_IMPORT_ACTIVITIES} activities`);
   const keys = new Set(parsed.activities.map((a) => a.key));

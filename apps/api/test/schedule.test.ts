@@ -1,12 +1,14 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { beforeAll, describe, expect, it } from 'vitest';
-import { day, setupWorld, type World } from './helpers.js';
+import { day, prisma, setupWorld, type World } from './helpers.js';
 
 let w: World;
 let other: World;
 const ids: Record<string, string> = {};
 beforeAll(async () => {
   w = await setupWorld();
+  // These cases check the calendar-day logic; working-day calendars are covered in schedule-excel.test.ts.
+  await prisma.project.update({ where: { id: w.project.id }, data: { workWeek: '1111111' } });
   other = await setupWorld();
   // A(10) → B(20) → D(5);  A → C(5) → D   ⇒ critical A-B-D, C has 15 days float
   const defs: Array<[string, number, number]> = [['A', 10, 10], ['B', 20, 20], ['C', 20, 5], ['D', 40, 5]];

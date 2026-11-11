@@ -2,13 +2,15 @@
 import ExcelJS from 'exceljs';
 import request from 'supertest';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { app, PASSWORD, prisma, setupWorld, type World } from './helpers.js';
+import { app, day, PASSWORD, prisma, setupWorld, type World } from './helpers.js';
 import { readDate, readPredecessors } from '../src/services/scheduleExcel.js';
 
 let w: World;
 let pm: ReturnType<typeof request.agent>;
 beforeAll(async () => {
   w = await setupWorld();
+  // The Excel reading cases count calendar days; the working-day calendar has its own cases below.
+  await prisma.project.update({ where: { id: w.project.id }, data: { workWeek: '1111111' } });
   await w.c.admin.ok.post(`${w.P}/r/wbsNodes`, { code: 'TWR-A', name: 'Tower A' });
   pm = request.agent(app);
   await pm.post('/api/auth/login').set('X-Requested-With', 'toprock').send({ email: w.users.pm.email, password: PASSWORD });
@@ -127,5 +129,68 @@ describe('schedule baseline', () => {
     expect((await A.get(`${w.P}/schedule/baseline`)).changedSinceBaseline).toBe(0);
     expect(await prisma.auditEvent.count({ where: { projectId: w.project.id, action: 'SCHEDULE_BASELINED' } })).toBe(2);
     expect((await w.c.auditor.post(`${w.P}/schedule/baseline`, {})).status).toBe(403);
+  });
+});
+
+describe('working calendar of the project', () => {
+  it('new projects have Sunday off; the calendar is saved with holidays and audited', async () => {
+    const fresh = await setupWorld();
+    expect((await fresh.c.pm.ok.get(`${fresh.P}/schedule/calendar`)).workWeek).toBe('1111110');
+    const saved = await w.c.pm.ok.put(`${w.P}/schedule/calendar`, { workWeek: '1111110', holidays: [{ date: '2027-01-26', name: 'Republic Day' }, { date: '2027-01-15', name: 'Pongal' }] });
+    expect(saved.holidays).toHaveLength(2);
+    const cal = await w.c.se.ok.get(`${w.P}/schedule/calendar`);
+    expect(cal).toEqual({ workWeek: '1111110', holidays: [{ date: '2027-01-15', name: 'Pongal' }, { date: '2027-01-26', name: 'Republic Day' }] });
+    expect((await w.c.pm.put(`${w.P}/schedule/calendar`, { workWeek: '0000000', holidays: [] })).status).toBe(422);
+    expect((await w.c.pm.put(`${w.P}/schedule/calendar`, { workWeek: '1111110', holidays: [{ date: '2027-01-15', name: 'A' }, { date: '2027-01-15', name: 'B' }] })).status).toBe(422);
+    expect((await w.c.auditor.put(`${w.P}/schedule/calendar`, { workWeek: '1111111', holidays: [] })).status).toBe(403);
+  });
+
+  it('Excel durations and links count working days: Sundays and holidays are skipped', async () => {
+    const r = await upload(
+      await sheet([
+        ['Activity ID', 'Activity', 'Start', 'Duration', 'Predecessors'],
+        ['W-1', 'Shuttering', '11-01-2027', 6, null], // Mon 11 → Sat 16 (Fri 15 is Pongal → Mon 18)
+        ['W-2', 'Concreting', null, 2, 'W-1'],
+      ]),
+    );
+    const a = Object.fromEntries(r.body.activities.map((x: any) => [x.code, x]));
+    expect(a['W-1']).toMatchObject({ plannedStart: '2027-01-11', plannedFinish: '2027-01-18' });
+    expect(a['W-2']).toMatchObject({ plannedStart: '2027-01-19', plannedFinish: '2027-01-20' });
+  });
+
+  it('the forecast counts working days, and compares with the baseline', async () => {
+    const A = w.c.pm.ok;
+    const x = await A.post(`${w.P}/r/activities`, { code: 'CAL-1', name: 'Calendar check', plannedStart: '2030-01-05', plannedFinish: '2030-01-08', weight: '1' }); // Sat 5 → Tue 8: 3 working days
+    await prisma.activity.update({ where: { id: x.id }, data: { baselineStart: new Date('2030-01-05T00:00:00Z'), baselineFinish: new Date('2030-01-07T00:00:00Z') } });
+    const c = await A.get(`${w.P}/schedule/cpm?asOf=2030-01-01`);
+    const row = c.activities.find((r: any) => r.code === 'CAL-1');
+    expect(row).toMatchObject({ duration: 3, earlyStart: '2030-01-05', earlyFinish: '2030-01-08', baselineFinish: '2030-01-07', baselineVarianceDays: 1 });
+    expect(c.calendar).toMatchObject({ workWeek: '1111110', unit: 'working days' });
+    expect(c.baselineFinish).toBeTruthy();
+    expect(typeof c.slipVsBaselineDays).toBe('number');
+  });
+});
+
+describe('activities from BOQ items', () => {
+  it('creates one linked activity per BOQ item with unit, qty, cost code and weight by amount; skips items already covered', async () => {
+    const A = w.c.admin.ok;
+    const b1 = await A.post(`${w.P}/r/boqItems`, { itemCode: '3.01', description: 'RCC M25 for slabs', section: 'Superstructure', unit: 'Cum', contractQty: '450', unitRate: '8000', costCodeId: w.cc.material.id });
+    const b2 = await A.post(`${w.P}/r/boqItems`, { itemCode: '3.02', description: 'Block work 200 mm', section: 'Superstructure', unit: 'Sqm', contractQty: '1200', unitRate: '900', costCodeId: w.cc.material.id });
+    const list = await w.c.pm.ok.get(`${w.P}/schedule/from-boq`);
+    expect(list.find((x: any) => x.id === b1.id)).toMatchObject({ itemCode: '3.01', amount: '3600000.00', activities: [] });
+
+    const r = await w.c.pm.ok.post(`${w.P}/schedule/from-boq`, { boqItemIds: [b1.id, b2.id] });
+    expect(r).toMatchObject({ created: 2, codes: ['B-3.01', 'B-3.02'], skipped: [] });
+    const act = await prisma.activity.findFirstOrThrow({ where: { projectId: w.project.id, code: 'B-3.01' } });
+    expect({ boq: act.boqItemId, cc: act.costCodeId, unit: act.unit, qty: act.plannedQty?.toString(), weight: act.weight.toString() }).toEqual({ boq: b1.id, cc: w.cc.material.id, unit: 'Cum', qty: '450', weight: '36' }); // ₹36 lakh
+
+    const again = await w.c.pm.ok.post(`${w.P}/schedule/from-boq`, { boqItemIds: [b1.id], weightBy: 'EQUAL' });
+    expect(again).toMatchObject({ created: 0, skipped: ['3.01'] });
+
+    // Progress on the activity moves the BOQ executed quantity.
+    await w.c.se.ok.post(`${w.P}/r/progressEntries`, { date: day(0), activityId: act.id, qtyDone: '90' });
+    const boq = await prisma.boqItem.findUniqueOrThrow({ where: { id: b1.id } });
+    expect(boq.executedQty.toString()).toBe('90');
+    expect((await w.c.auditor.post(`${w.P}/schedule/from-boq`, { boqItemIds: [b2.id] })).status).toBe(403);
   });
 });

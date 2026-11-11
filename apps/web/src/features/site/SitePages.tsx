@@ -4,6 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
 import { CalendarRange, CheckCircle2, ClipboardList, Flag, RotateCcw, Save, Users } from 'lucide-react';
+import { WEEKDAYS } from '@toprock/shared';
 import { api, type Paged } from '../../lib/api';
 import { useAuth, useProjectId } from '../../lib/auth';
 import { formatDate, formatMoney, formatQty, humanize, todayIso } from '../../lib/format';
@@ -323,6 +324,9 @@ interface CpmRow {
   totalFloat: number | null;
   critical: boolean;
   finishVarianceDays: number | null;
+  baselineStart: string | null;
+  baselineFinish: string | null;
+  baselineVarianceDays: number | null;
 }
 interface Cpm {
   asOf: string;
@@ -330,11 +334,15 @@ interface Cpm {
   forecastFinish?: string;
   plannedFinish?: string | null;
   slipDays?: number | null;
+  baselineFinish?: string | null;
+  slipVsBaselineDays?: number | null;
+  calendar?: { workWeek: string; holidays: number; unit: string };
   criticalPath: string[];
   activities: CpmRow[];
 }
 
 const CRITICAL = '#e34948';
+const slipText = (d: number | null | undefined) => (d === null || d === undefined ? '—' : d > 0 ? `${d} days late` : d < 0 ? `${-d} days early` : 'On time');
 
 export function SchedulePage() {
   const { can } = useAuth();
@@ -358,8 +366,13 @@ export function SchedulePage() {
     const f = toTime(cpm.get(a.id)?.earlyFinish);
     return f !== null ? f + DAY : (toTime(a.actualFinish) ?? (a.actualStart ? now : null));
   };
-  const starts = acts.flatMap((a) => [toTime(a.plannedStart), fcStart(a)]).filter((x): x is number => x !== null);
-  const ends = acts.flatMap((a) => [toTime(a.plannedFinish), fcEnd(a)]).filter((x): x is number => x !== null);
+  const blStart = (a: Activity) => toTime(cpm.get(a.id)?.baselineStart ?? null);
+  const blEnd = (a: Activity) => {
+    const f = toTime(cpm.get(a.id)?.baselineFinish ?? null);
+    return f === null ? null : f + DAY;
+  };
+  const starts = acts.flatMap((a) => [toTime(a.plannedStart), fcStart(a), blStart(a)]).filter((x): x is number => x !== null);
+  const ends = acts.flatMap((a) => [toTime(a.plannedFinish), fcEnd(a), blEnd(a)]).filter((x): x is number => x !== null);
   const min = view === 'lookahead' ? now - 7 * DAY : Math.min(...starts);
   const max = view === 'lookahead' ? now + 21 * DAY : Math.max(...ends);
   const span = Math.max(max - min, DAY);
@@ -392,6 +405,8 @@ export function SchedulePage() {
             <Tabs value={view} onValueChange={(v) => setView(v as 'all' | 'lookahead' | 'critical')} tabs={[{ value: 'all', label: 'Full schedule' }, { value: 'critical', label: 'Critical path' }, { value: 'lookahead', label: '3-week look-ahead' }]} />
             {can('progress.manage') && <ImportScheduleButton />}
             {can('progress.manage') && <BaselineButton />}
+            <CalendarButton manage={can('progress.manage')} />
+            {can('progress.manage') && <FromBoqButton />}
             {can('progress.manage') && <Button variant="outline" onClick={() => navigate('/schedule/activities/new')}>Add activity</Button>}
           </>
         }
@@ -399,8 +414,16 @@ export function SchedulePage() {
       {c?.forecastFinish && (
         <div className="mb-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
           <KpiCard label="Forecast finish" value={formatDate(c.forecastFinish)} tone={c.slipDays && c.slipDays > 0 ? 'danger' : 'success'} hint="From the critical path calculation" />
-          <KpiCard label="Planned finish" value={formatDate(c.plannedFinish)} tone="neutral" />
-          <KpiCard label="Forecast vs plan" value={c.slipDays === null || c.slipDays === undefined ? '—' : c.slipDays > 0 ? `${c.slipDays} days late` : c.slipDays < 0 ? `${-c.slipDays} days early` : 'On time'} tone={c.slipDays && c.slipDays > 0 ? 'danger' : 'success'} />
+          {c.baselineFinish ? (
+            <KpiCard label="Baseline finish" value={formatDate(c.baselineFinish)} tone="neutral" sub={`Current plan ${formatDate(c.plannedFinish)}`} hint="The approved plan saved with “Save baseline”" />
+          ) : (
+            <KpiCard label="Planned finish" value={formatDate(c.plannedFinish)} tone="neutral" sub="No baseline saved yet" />
+          )}
+          {c.baselineFinish ? (
+            <KpiCard label="Forecast vs baseline" value={slipText(c.slipVsBaselineDays)} tone={c.slipVsBaselineDays && c.slipVsBaselineDays > 0 ? 'danger' : 'success'} sub={`vs current plan: ${slipText(c.slipDays)}`} hint="Calendar days between the forecast finish and the baseline finish" />
+          ) : (
+            <KpiCard label="Forecast vs plan" value={slipText(c.slipDays)} tone={c.slipDays && c.slipDays > 0 ? 'danger' : 'success'} />
+          )}
           <KpiCard label="Critical activities" value={criticalCount} tone={criticalCount ? 'warning' : 'neutral'} hint="Zero float: any delay moves the finish date" />
         </div>
       )}
@@ -419,6 +442,7 @@ export function SchedulePage() {
             <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm" style={{ background: SERIES[0] }} /> Forecast / actual</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm" style={{ background: SERIES[1] }} /> Forecast late</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-2.5 w-5 rounded-sm" style={{ background: CRITICAL }} /> Critical</span>
+            <span className="flex items-center gap-1.5"><span className="inline-block h-1 w-5 rounded-sm bg-slate-500" /> Baseline</span>
             <span className="flex items-center gap-1.5"><Flag className="h-3.5 w-3.5 text-brand-600" /> Milestone</span>
             <span className="flex items-center gap-1.5"><span className="inline-block h-3 w-0.5 bg-red-500" /> Today</span>
             {undated > 0 && <span className="ml-auto">{undated} activity(ies) without planned dates are hidden</span>}
@@ -426,7 +450,7 @@ export function SchedulePage() {
           <div className="overflow-x-auto">
             <div className="min-w-[760px]">
               <div className="grid grid-cols-[260px_1fr] border-b border-line bg-surface-50 text-[11px] text-muted">
-                <div className="px-3 py-1.5 font-medium">Activity · float</div>
+                <div className="px-3 py-1.5 font-medium">Activity · float{c?.calendar ? ` (${c.calendar.unit})` : ''}</div>
                 <div className="relative h-7">
                   {months.filter((m) => m.show).map((m) => (
                     <span key={m.t} className="absolute top-1.5 border-l border-line pl-1 whitespace-nowrap" style={{ left: pos(m.t) }}>
@@ -450,7 +474,7 @@ export function SchedulePage() {
                       <span className="truncate"><span className="font-medium text-navy-800">{a.code}</span> <span className="text-muted">{a.name}</span></span>
                       {r?.critical ? <Badge tone="danger" className="ml-auto shrink-0">Critical</Badge> : float !== null && float !== undefined ? <span className="ml-auto shrink-0 text-[11px] text-muted">{float} d</span> : null}
                     </Link>
-                    <div className="relative h-10" title={`${a.name}: planned ${formatDate(a.plannedStart)} – ${formatDate(a.plannedFinish)}${r ? `; forecast ${formatDate(r.earlyStart)} – ${formatDate(r.earlyFinish)}; float ${r.totalFloat ?? '—'} days` : ''}; ${num(a.percentComplete).toFixed(0)}% complete`}>
+                    <div className="relative h-10" title={`${a.name}: planned ${formatDate(a.plannedStart)} – ${formatDate(a.plannedFinish)}${r?.baselineFinish ? `; baseline ${formatDate(r.baselineStart)} – ${formatDate(r.baselineFinish)}` : ''}${r ? `; forecast ${formatDate(r.earlyStart)} – ${formatDate(r.earlyFinish)}; float ${r.totalFloat ?? '—'} ${c?.calendar?.unit ?? 'days'}` : ''}${r?.baselineVarianceDays ? `; ${slipText(r.baselineVarianceDays)} vs baseline` : ''}; ${num(a.percentComplete).toFixed(0)}% complete`}>
                       {months.map((m) => <span key={m.t} className="absolute inset-y-0 border-l border-dashed" style={{ left: pos(m.t), borderColor: GRID }} />)}
                       {a.isMilestone ? (
                         <Flag className="absolute top-2.5 h-4 w-4 -translate-x-1/2" style={{ left: pos(fs ?? pf), color: r?.critical ? CRITICAL : undefined }} aria-label={`Milestone ${formatDate(r?.earlyFinish ?? a.plannedFinish)}`} />
@@ -458,6 +482,7 @@ export function SchedulePage() {
                         <span className="absolute top-2 h-2.5 rounded" style={{ left: pos(ps), width: width(ps, pf + DAY), background: '#c5d8f2' }} />
                       )}
                       {!a.isMilestone && fs !== null && fe !== null && <span className="absolute top-5 h-2.5 rounded" style={{ left: pos(fs), width: width(fs, fe), background: color }} />}
+                      {!a.isMilestone && blStart(a) !== null && blEnd(a) !== null && <span className="absolute top-8 h-1 rounded bg-slate-500" style={{ left: pos(blStart(a)!), width: width(blStart(a)!, blEnd(a)!) }} />}
                       <span className="absolute inset-y-0 w-0.5 bg-red-500/70" style={{ left: pos(now) }} />
                     </div>
                   </div>
@@ -579,6 +604,241 @@ function ImportScheduleButton() {
                   ))}
                 </tbody>
               </table>
+            </div>
+          </div>
+        )}
+      </Dialog>
+    </>
+  );
+}
+
+interface BoqCandidate {
+  id: string;
+  itemCode: string;
+  description: string;
+  section: string | null;
+  unit: string;
+  qty: string;
+  amount: string;
+  activities: string[];
+}
+
+/** Creates activities from chosen BOQ items (linked, with unit, quantity, cost code and WBS); dates are added afterwards. */
+function FromBoqButton() {
+  const projectId = useProjectId();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState('');
+  const [weightBy, setWeightBy] = useState<'AMOUNT' | 'EQUAL'>('AMOUNT');
+  const q = useQuery({ queryKey: ['p', 'schedule-from-boq', projectId], queryFn: () => api.get<BoqCandidate[]>(`/projects/${projectId}/schedule/from-boq`), enabled: open });
+  const rows = q.data ?? [];
+  const words = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const shown = rows.filter((r) => words.every((w) => `${r.itemCode} ${r.description} ${r.section ?? ''}`.toLowerCase().includes(w)));
+  const groups = useMemo(() => {
+    const g = new Map<string, BoqCandidate[]>();
+    for (const r of shown) g.set(r.section || 'Other items', [...(g.get(r.section || 'Other items') ?? []), r]);
+    return [...g.entries()];
+  }, [shown]);
+  const free = shown.filter((r) => !r.activities.length);
+  const toggle = (ids: string[], on: boolean) => setPicked((p) => { const n = new Set(p); for (const id of ids) (on ? n.add(id) : n.delete(id)); return n; });
+  const create = useMutation({
+    mutationFn: () => api.post<{ created: number; skipped: string[] }>(`/projects/${projectId}/schedule/from-boq`, { boqItemIds: [...picked], weightBy }),
+    onSuccess: (r) => {
+      toast.success(`${r.created} activit${r.created === 1 ? 'y' : 'ies'} created from the BOQ. Add their dates on the Activities tab, or import an Excel programme with the same activity IDs.`, { duration: 9000 });
+      setOpen(false);
+      setPicked(new Set());
+      void qc.invalidateQueries({ queryKey: ['p'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>Add from BOQ</Button>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => { setOpen(o); if (!o) setPicked(new Set()); }}
+        size="xl"
+        title="Create activities from BOQ items"
+        description="One activity per BOQ item, linked to it with its unit, quantity, cost code and WBS, so progress entered on the activity moves the BOQ executed quantity. The activity ID is the BOQ item code (with B- in front when the code is only numbers, e.g. B-3.01). Add dates and links afterwards."
+        footer={
+          <>
+            <span className="mr-auto self-center text-sm text-muted">{picked.size ? `${picked.size} selected` : 'Nothing selected'}</span>
+            <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+            <Button disabled={!picked.size} loading={create.isPending} onClick={() => create.mutate()}>Create {picked.size || ''} activit{picked.size === 1 ? 'y' : 'ies'}</Button>
+          </>
+        }
+      >
+        {q.isLoading ? (
+          <LoadingBlock rows={6} />
+        ) : !rows.length ? (
+          <p className="text-sm text-muted">This project has no BOQ items yet. Import the BOQ first (BOQ → Import).</p>
+        ) : (
+          <div className="space-y-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <Input className="min-w-56 flex-1" placeholder="Search BOQ items…" aria-label="Search BOQ items" value={search} onChange={(e) => setSearch(e.target.value)} />
+              <Select
+                className="w-64"
+                aria-label="Weight"
+                options={[{ value: 'AMOUNT', label: 'Weight by BOQ amount (₹ lakh)' }, { value: 'EQUAL', label: 'Equal weight' }]}
+                value={weightBy}
+                onChange={(e) => setWeightBy(e.target.value as 'AMOUNT' | 'EQUAL')}
+              />
+              {free.length > 0 && (
+                <Button size="sm" variant="secondary" onClick={() => toggle(free.map((r) => r.id), !free.every((r) => picked.has(r.id)))}>
+                  {free.every((r) => picked.has(r.id)) ? 'Clear selection' : `Select all ${free.length} shown`}
+                </Button>
+              )}
+            </div>
+            <p className="text-xs text-muted">Weight sets how much each activity counts in overall physical progress. By BOQ amount, a ₹36 lakh item counts 36 times a ₹1 lakh item.</p>
+            <div className="max-h-[50vh] space-y-3 overflow-y-auto">
+              {groups.map(([section, items]) => (
+                <section key={section}>
+                  <h3 className="mb-1 border-b border-line pb-1 text-sm font-semibold text-ink">{section}</h3>
+                  <ul className="divide-y divide-line">
+                    {items.map((r) => (
+                      <li key={r.id} className={cx('flex items-start gap-2 py-1.5', r.activities.length > 0 && 'opacity-60')}>
+                        <input type="checkbox" className="mt-0.5 h-4 w-4 accent-brand-600" aria-label={`BOQ ${r.itemCode}`} disabled={r.activities.length > 0} checked={picked.has(r.id)} onChange={(e) => toggle([r.id], e.target.checked)} />
+                        <span className="min-w-0 flex-1">
+                          <span className="font-medium">{r.itemCode}</span> <span className="text-ink">{r.description}</span>
+                          <span className="block text-xs text-muted">{num(r.qty).toLocaleString('en-IN')} {r.unit} · {formatMoney(r.amount)}</span>
+                        </span>
+                        {r.activities.length > 0 && <Badge tone="success">Activity {r.activities.join(', ')}</Badge>}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              ))}
+            </div>
+          </div>
+        )}
+      </Dialog>
+    </>
+  );
+}
+
+const NATIONAL_HOLIDAYS: Array<[string, string]> = [
+  ['01-26', 'Republic Day'],
+  ['05-01', 'May Day'],
+  ['08-15', 'Independence Day'],
+  ['10-02', 'Gandhi Jayanti'],
+  ['12-25', 'Christmas'],
+];
+
+/** Work week and holidays of the project: forecast dates, durations and floats count working days only. */
+function CalendarButton({ manage }: { manage: boolean }) {
+  const projectId = useProjectId();
+  const qc = useQueryClient();
+  const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<{ workWeek: string; holidays: Array<{ date: string; name: string }> } | null>(null);
+  const [newDate, setNewDate] = useState('');
+  const [newName, setNewName] = useState('');
+  const q = useQuery({ queryKey: ['p', 'schedule-calendar', projectId], queryFn: () => api.get<{ workWeek: string; holidays: Array<{ date: string; name: string }> }>(`/projects/${projectId}/schedule/calendar`), enabled: open });
+  const d = draft ?? q.data ?? null;
+  const save = useMutation({
+    mutationFn: () => api.put(`/projects/${projectId}/schedule/calendar`, d),
+    onSuccess: () => {
+      toast.success('Working calendar saved. Forecast dates now count working days only.');
+      setOpen(false);
+      setDraft(null);
+      void qc.invalidateQueries({ queryKey: ['p'] });
+    },
+    onError: (e: Error) => toast.error(e.message),
+  });
+  const set = (next: Partial<NonNullable<typeof d>>) => d && setDraft({ ...d, ...next });
+  const sortHol = (h: Array<{ date: string; name: string }>) => [...h].sort((a, b) => a.date.localeCompare(b.date));
+  const year = new Date().getUTCFullYear();
+  const addNational = (y: number) => {
+    if (!d) return;
+    const have = new Set(d.holidays.map((h) => h.date));
+    set({ holidays: sortHol([...d.holidays, ...NATIONAL_HOLIDAYS.map(([md, name]) => ({ date: `${y}-${md}`, name })).filter((h) => !have.has(h.date))]) });
+  };
+  const days = d ? [...d.workWeek].filter((c) => c === '1').length : 0;
+  return (
+    <>
+      <Button variant="outline" onClick={() => setOpen(true)}>Working calendar</Button>
+      <Dialog
+        open={open}
+        onOpenChange={(o) => { setOpen(o); if (!o) setDraft(null); }}
+        size="lg"
+        title="Working calendar"
+        description="Days the site works. Durations, lags and float count working days only, and forecast dates never fall on a holiday or a day off."
+        footer={
+          manage ? (
+            <>
+              <Button variant="outline" onClick={() => setOpen(false)}>Cancel</Button>
+              <Button loading={save.isPending} disabled={!d || !draft} onClick={() => save.mutate()}>Save calendar</Button>
+            </>
+          ) : undefined
+        }
+      >
+        {!d ? (
+          <LoadingBlock rows={4} />
+        ) : (
+          <div className="space-y-4 text-sm">
+            <div>
+              <p className="mb-2 font-medium text-ink">Work week ({days} day{days === 1 ? '' : 's'})</p>
+              <div className="flex flex-wrap gap-2">
+                {WEEKDAYS.map((w, i) => {
+                  const on = d.workWeek[i] === '1';
+                  return (
+                    <button
+                      key={w}
+                      type="button"
+                      disabled={!manage}
+                      aria-pressed={on}
+                      className={cx('w-14 rounded-lg border px-2 py-1.5 text-sm font-medium', on ? 'border-navy-800 bg-navy-800 text-white' : 'border-line bg-white text-muted')}
+                      onClick={() => {
+                        const next = d.workWeek.slice(0, i) + (on ? '0' : '1') + d.workWeek.slice(i + 1);
+                        if (next.includes('1')) set({ workWeek: next });
+                      }}
+                    >
+                      {w}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+            <div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="font-medium text-ink">Holidays ({d.holidays.length})</p>
+                {manage && (
+                  <span className="flex gap-2">
+                    <Button size="sm" variant="ghost" onClick={() => addNational(year)}>+ National holidays {year}</Button>
+                    <Button size="sm" variant="ghost" onClick={() => addNational(year + 1)}>+ {year + 1}</Button>
+                  </span>
+                )}
+              </div>
+              {manage && (
+                <div className="mb-2 flex flex-wrap items-end gap-2">
+                  <Input type="date" aria-label="Holiday date" className="w-44" value={newDate} onChange={(e) => setNewDate(e.target.value)} />
+                  <Input aria-label="Holiday name" className="min-w-40 flex-1" placeholder="e.g. Pongal, Diwali, site shutdown" value={newName} onChange={(e) => setNewName(e.target.value)} />
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={!newDate || !newName.trim() || d.holidays.some((h) => h.date === newDate)}
+                    onClick={() => {
+                      set({ holidays: sortHol([...d.holidays, { date: newDate, name: newName.trim() }]) });
+                      setNewDate('');
+                      setNewName('');
+                    }}
+                  >
+                    Add
+                  </Button>
+                </div>
+              )}
+              {d.holidays.length ? (
+                <ul className="max-h-60 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+                  {d.holidays.map((h) => (
+                    <li key={h.date} className="flex items-center justify-between gap-2 px-3 py-1.5">
+                      <span><span className="tabular-nums">{formatDate(h.date)}</span> · {h.name}</span>
+                      {manage && <button type="button" className="text-xs text-red-600 hover:underline" onClick={() => set({ holidays: d.holidays.filter((x) => x.date !== h.date) })}>Remove</button>}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-muted">No holidays yet. Add festival days (Pongal, Diwali…) and planned site shutdowns.</p>
+              )}
             </div>
           </div>
         )}

@@ -5,6 +5,7 @@
  * dates under which activities follow (e.g. "TOWER A") are taken as WBS / section headings.
  */
 import ExcelJS from 'exceljs';
+import { fromDayNumber, toDayNumber, WorkCalendar } from '@toprock/shared';
 import type { ImportedActivity, ImportedDependency, ParsedSchedule } from './scheduleImport.js';
 
 type Field = 'code' | 'id' | 'name' | 'start' | 'finish' | 'duration' | 'predecessors' | 'wbs' | 'milestone' | 'percent' | 'actualStart' | 'actualFinish' | 'unit' | 'qty' | 'weight';
@@ -68,7 +69,6 @@ export function readDate(raw: unknown): string | null {
   return null;
 }
 
-const addDays = (isoDate: string, n: number) => new Date(Date.parse(`${isoDate}T00:00:00Z`) + n * 86_400_000).toISOString().slice(0, 10);
 const num = (v: unknown): number | null => {
   if (v === null || v === undefined || v === '') return null;
   const n = typeof v === 'number' ? v : Number(String(v).replace(/[^0-9.-]/g, ''));
@@ -92,7 +92,8 @@ export function readPredecessors(raw: unknown): Array<{ ref: string; type: Impor
     .filter((p) => p.ref);
 }
 
-export async function parseScheduleExcel(buf: Buffer): Promise<ParsedSchedule> {
+/** Durations and lags are counted in the project's working days (calendar days when no calendar is given). */
+export async function parseScheduleExcel(buf: Buffer, cal: WorkCalendar = new WorkCalendar()): Promise<ParsedSchedule> {
   const wb = new ExcelJS.Workbook();
   try {
     await wb.xlsx.load(buf as unknown as ArrayBuffer);
@@ -116,13 +117,17 @@ export async function parseScheduleExcel(buf: Buffer): Promise<ParsedSchedule> {
           }
         }
       }
-      if (cols.name && (cols.start || cols.finish || cols.duration)) return readRows(ws, r, cols);
+      if (cols.name && (cols.start || cols.finish || cols.duration)) return readRows(ws, r, cols, cal);
     }
   }
   throw new Error('No schedule found. The sheet needs a header row with an activity name column and Start / Finish dates (or Start and Duration). Download the template to see the layout.');
 }
 
-function readRows(ws: ExcelJS.Worksheet, headerRow: number, cols: Partial<Record<Field, number>>): ParsedSchedule {
+function readRows(ws: ExcelJS.Worksheet, headerRow: number, cols: Partial<Record<Field, number>>, cal: WorkCalendar): ParsedSchedule {
+  /** n working days after (or before, when negative) a date; the date is first moved to a working day. */
+  const shift = (iso: string, n: number) => cal.shift(iso, n);
+  /** The working day n working days before the last working day on or before `iso`. */
+  const back = (iso: string, n: number) => fromDayNumber(cal.fromWork(cal.finishIndex(toDayNumber(iso)) - n));
   const warnings: string[] = [];
   const activities: Array<ImportedActivity & { preds: string; id: string | null; dur: number | null }> = [];
   let section: string | null = null;
@@ -141,8 +146,8 @@ function readRows(ws: ExcelJS.Worksheet, headerRow: number, cols: Partial<Record
       continue;
     }
     const msFlag = truthy(get(row, 'milestone'));
-    if (start && !finish && dur !== null) finish = addDays(start, Math.max(0, Math.round(dur) - 1));
-    if (!start && finish && dur !== null) start = addDays(finish, -Math.max(0, Math.round(dur) - 1));
+    if (start && !finish && dur !== null) finish = Math.round(dur) <= 0 ? start : shift(start, Math.round(dur) - 1);
+    if (!start && finish && dur !== null) start = Math.round(dur) <= 0 ? finish : back(finish, Math.round(dur) - 1);
     if (msFlag && start && !finish) finish = start;
     if (msFlag && finish && !start) start = finish;
     if (start && finish && finish < start) {
@@ -223,18 +228,18 @@ function readRows(ws: ExcelJS.Worksheet, headerRow: number, cols: Partial<Record
       if (preds.some(({ p }) => !p.plannedStart || !p.plannedFinish)) continue;
       const len = Math.max(a.dur, 1);
       const starts = preds.map(({ l, p }) => {
-        if (l.type === 'SS') return addDays(p.plannedStart!, l.lagDays);
-        if (l.type === 'FF') return addDays(p.plannedFinish!, l.lagDays - len + 1);
-        if (l.type === 'SF') return addDays(p.plannedStart!, l.lagDays - len + 1);
-        return addDays(p.plannedFinish!, (a.dur === 0 ? 0 : 1) + l.lagDays); // FS (a milestone falls on the predecessor's finish)
+        if (l.type === 'SS') return shift(p.plannedStart!, l.lagDays);
+        if (l.type === 'FF') return shift(shift(p.plannedFinish!, l.lagDays), -(len - 1));
+        if (l.type === 'SF') return shift(shift(p.plannedStart!, l.lagDays), -(len - 1));
+        return shift(p.plannedFinish!, (a.dur === 0 ? 0 : 1) + l.lagDays); // FS (a milestone falls on the predecessor's finish)
       });
       a.plannedStart = starts.sort().at(-1)!;
-      a.plannedFinish = addDays(a.plannedStart, len - 1);
+      a.plannedFinish = a.dur === 0 ? a.plannedStart : shift(a.plannedStart, len - 1);
       scheduled++;
       changed = true;
     }
   }
-  if (scheduled) warnings.push(`${scheduled} activit${scheduled === 1 ? 'y was' : 'ies were'} given dates from their predecessors and durations (calendar days)`);
+  if (scheduled) warnings.push(`${scheduled} activit${scheduled === 1 ? 'y was' : 'ies were'} given dates from their predecessors and durations (${cal.isSevenDay ? 'calendar days' : 'working days of the project calendar'})`);
   if (unknown.size) warnings.push(`Predecessors not found in the sheet and ignored: ${[...unknown].slice(0, 15).join(', ')}${unknown.size > 15 ? '…' : ''}`);
   const found = (Object.keys(cols) as Field[]).filter((f) => f !== 'name');
   warnings.unshift(`Sheet "${ws.name}", header on row ${headerRow}; columns read: name, ${found.join(', ')}`);
@@ -271,6 +276,6 @@ export async function scheduleTemplate(): Promise<Buffer> {
   ];
   rows.forEach((r) => ws.addRow(r));
   ws.addRow([]);
-  ws.addRow([null, 'Notes: give Start and Finish, or Start and Duration (calendar days). Predecessors: activity IDs separated by commas, optionally with FS/SS/FF/SF and a lag, e.g. "A-110 FS+1". Rows with only a name (like TOWER A) are headings. Dates as 15-01-2027 or 15-Jan-27.']);
+  ws.addRow([null, 'Notes: give Start and Finish, or Start and Duration (working days of the project calendar). Predecessors: activity IDs separated by commas, optionally with FS/SS/FF/SF and a lag, e.g. "A-110 FS+1". Rows with only a name (like TOWER A) are headings. Dates as 15-01-2027 or 15-Jan-27.']);
   return Buffer.from(await wb.xlsx.writeBuffer());
 }
