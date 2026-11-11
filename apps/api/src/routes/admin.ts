@@ -88,7 +88,7 @@ adminRouter.post('/users/invite', async (req, res) => {
   const mail = await sendEmail({
     to: email,
     subject: 'You are invited to TOPROCK GLOBAL Cost Control',
-    text: `Hello ${data.name},\n\n${inviter} has invited you to the TOPROCK GLOBAL construction & interior fit-out cost control system.\n\nSet your password using the button below. The link works once and expires in 7 days.`,
+    text: `Hello ${data.name},\n\n${inviter} has invited you to the TOPROCK GLOBAL cost control system.\n\nSet your password using the button below. The link works once and expires in 7 days.`,
     action: { url: out.link, label: 'Accept invitation' },
   });
   if (!mail.sent) logger.info({ email, reason: mail.error }, 'invitation email not sent');

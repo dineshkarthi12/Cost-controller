@@ -364,7 +364,7 @@ export function AppShell() {
         <div className={cx('flex items-center justify-center bg-white', collapsed ? 'h-16 px-2' : 'h-[76px] px-3 pt-2')}>
           <Logo compact={collapsed} />
         </div>
-        {!collapsed && <p className="border-b border-navy-950 bg-white px-3 pt-1 pb-2 text-center text-[9px] font-semibold uppercase leading-tight tracking-wider text-navy-700">Construction &amp; Interior Fit-out<br />Cost Control</p>}
+        {!collapsed && <p className="border-b border-navy-950 bg-white px-3 pt-1 pb-2 text-center text-[9px] font-semibold uppercase leading-tight tracking-wider text-navy-700">Cost Control</p>}
         <SidebarNav collapsed={collapsed} />
         <button onClick={toggle} className="flex items-center justify-center gap-2 border-t border-white/10 py-3 text-xs text-blue-100/70 hover:text-white" aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}>
           {collapsed ? <ChevronsRight className="h-4 w-4" /> : <ChevronsLeft className="h-4 w-4" />}

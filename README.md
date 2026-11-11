@@ -1,4 +1,4 @@
-# TOPROCK GLOBAL — Construction & Interior Fit-out Cost Control
+# TOPROCK GLOBAL — Cost Control
 
 A web application for controlling the cost of construction and interior fit-out projects: budgets, commitments, accruals and actuals in one cost ledger, from site measurement to procurement, subcontract and client billing, month-end close and project closeout. It covers 48 modules and runs on desktop, tablet and mobile.
 
