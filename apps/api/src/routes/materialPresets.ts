@@ -33,7 +33,7 @@ const rate = z
   .refine((v) => v === '' || (/^\d+(\.\d{1,4})?$/.test(v) && Number(v) < 1e12), 'Enter a number with up to 4 decimals')
   .optional();
 const addSchema = z.object({
-  items: z.array(z.object({ code: z.string().trim().min(1), standardRate: rate, reorderLevel: rate })).min(1, 'Choose at least one material').max(500),
+  items: z.array(z.object({ code: z.string().trim().min(1), standardRate: rate, reorderLevel: rate })).min(1, 'Choose at least one material').max(1000),
 });
 
 materialPresetsRouter.post('/', async (req, res) => {
