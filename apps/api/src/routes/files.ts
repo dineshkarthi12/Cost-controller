@@ -68,6 +68,8 @@ filesRouter.get('/:id', async (req, res) => {
   res.setHeader('Cache-Control', 'private, max-age=300');
   res.setHeader('X-File-Sha256', f.sha256);
   if (req.query.download) await audit(prisma, ctx, { action: 'FILE_DOWNLOAD', entityType: 'file', entityId: f.id, projectId: f.projectId, summary: f.originalName });
+  // A read error after the headers are sent ends this response only.
+  stream.on('error', () => res.destroy());
   stream.pipe(res);
 });
 
