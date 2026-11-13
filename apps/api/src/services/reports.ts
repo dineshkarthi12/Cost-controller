@@ -246,15 +246,14 @@ const REPORTS: ReportDef[] = [
       const revenue = D(project.contractValue).plus(D(vo._sum.approvedValue ?? 0));
       const margin = revenue.minus(D(pos.total.eac));
       return {
-        columns: [{ key: 'item', label: 'Item' }, { key: 'amount', label: 'Amount', type: 'money' }],
+        columns: [{ key: 'item', label: 'Item' }, { key: 'amount', label: 'Amount', type: 'money' }, { key: 'share', label: '% of revised contract', type: 'pct' }],
         rows: [
           { item: 'Original contract value', amount: money(project.contractValue) },
           { item: 'Approved variations', amount: money(vo._sum.approvedValue ?? 0) },
           { item: 'Revised contract value', amount: money(revenue) },
           { item: 'Approved budget (BAC)', amount: pos.total.approvedBudget },
           { item: 'Forecast final cost (EAC)', amount: pos.total.eac },
-          { item: 'Projected margin', amount: money(margin) },
-          { item: 'Projected margin %', amount: revenue.isZero() ? '—' : `${margin.div(revenue).times(100).toFixed(2)}%` },
+          { item: 'Projected margin', amount: money(margin), share: revenue.isZero() ? null : margin.div(revenue).toDecimalPlaces(4).toString() },
         ],
       };
     },

@@ -29,6 +29,8 @@ interface ReportData {
 
 export function cell(v: unknown, type: ColType | undefined, currency?: string) {
   if (v === null || v === undefined || v === '') return <span className="text-slate-400">—</span>;
+  // A value that is not a number in a numeric column is shown as it is, never as a crash.
+  if ((type === 'money' || type === 'qty' || type === 'pct') && !/^-?\d+(\.\d+)?(e-?\d+)?$/i.test(String(v).trim())) return String(v);
   switch (type) {
     case 'money':
       return formatMoney(String(v), currency);
