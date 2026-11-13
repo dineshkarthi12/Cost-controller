@@ -69,6 +69,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Report reminders | Nothing before the reminder time; at 18:30 India time a site engineer gets one reminder naming the missing DPR and MPR (no labour-report line on a project that does not use it), a QS gets one for the work report, finance gets none, and a second run sends nothing more; once the DPR and MPR are in nothing is due; a project holiday is skipped; switched off in Settings, nothing runs (`report-reminders.test.ts`) |
 | Payroll | Paid days = present + ½ half days, leave and absence unpaid, overtime at 1.5×, workers without attendance at zero (`payroll.test.ts`, shared). Preview for own workers and with subcontractor workers; Excel export with the Payroll and Attendance sheets, live formulas with cached values, totals, a P / H / A grid, audited; reversed or over-long periods refused, non-members 404 (`payroll.test.ts`, API) |
 | Supplier rating | Weights, parts without data left out, cheaper than average scores 100 on price, too little history gives no grade (`supplierRating.test.ts`, shared). From goods receipts (on time, accepted quantity) and PO rates of two suppliers of the same material; one receipt gives no grade; users without procurement access are refused; one-project scope (`supplier-ratings.test.ts`, API) |
+| Report column types | Every report in the catalogue runs, and its money / quantity / percentage / integer columns hold numbers or nothing, never formatted text (`reports-types.test.ts`; it caught the project profitability report sending "77.50%" in a money column, which crashed the report page) |
 | Scheduled jobs | The cron endpoint runs only with the exact `CRON_SECRET` bearer token, and wrong or missing tokens get 404 (`auth.test.ts`) |
 | Vercel packaging | Checked by hand, not in CI: the build script ran under `VERCEL=1` against a fresh database, the function bundle was traced with `@vercel/nft`, and the handler was exercised in production mode (`docs/DEPLOY_VERCEL.md`). No real Vercel deployment was made. |
 | Containers | The API and web images were built and run with Docker. Migrations were applied, health was OK, admin login went through nginx, SPA deep links were served, and security headers were present. This was checked by hand, not in an automated suite. |
@@ -78,7 +79,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Suite | Result |
 |---|---|
 | `@toprock/shared` unit | **62 / 62 passed** (9 files) |
-| `@toprock/api` integration | **195 / 195 passed** (28 files) |
+| `@toprock/api` integration | **197 / 197 passed** (29 files) |
 | `@toprock/web` components | **16 / 16 passed** (4 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile). The mobile test failed once in three runs: the photo page can drop `?capture=1` from the address before the assertion reads it (timing; unrelated to the change being tested) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |
