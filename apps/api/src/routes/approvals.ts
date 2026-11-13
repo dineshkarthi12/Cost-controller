@@ -8,6 +8,18 @@ import { ctxOf } from '../middleware/auth.js';
 import { accessibleProjectIds, assertProjectAccess } from '../services/access.js';
 import { decide, eligibility, getHandler, loadEntity, requestHistory, withdraw } from '../services/workflow.js';
 import { audit } from '../services/audit.js';
+import { isMatchDocType, matchCheck } from '../services/matchCheck.js';
+
+/** Short match-check result for an inbox row (MR / PR / PO only). */
+async function matchSummary(orgId: string, docType: string, entityId: string) {
+  if (!isMatchDocType(docType)) return null;
+  try {
+    const m = await matchCheck(prisma, orgId, docType, entityId);
+    return { status: m.status, summary: m.summary, mode: m.mode };
+  } catch {
+    return null;
+  }
+}
 
 export const approvalsRouter = Router();
 
@@ -51,7 +63,8 @@ approvalsRouter.get('/inbox', async (req, res) => {
     const already = await prisma.approvalAction.findFirst({ where: { requestId: r.id, stepNo: r.currentStepNo, actorId: ctx.user.id, action: 'APPROVE' } });
     if (!already) mine.push({ ...r, onBehalfOf: e.onBehalfOf ?? null, selfSubmitted: r.submittedById === ctx.user.id });
   }
-  res.json(await enrich(mine as never));
+  const rows = await enrich(mine as never);
+  res.json(await Promise.all(rows.map(async (r) => ({ ...r, match: await matchSummary(ctx.orgId, r.docType, r.entityId) }))));
 });
 
 approvalsRouter.get('/', async (req, res) => {
@@ -88,7 +101,7 @@ approvalsRouter.get('/:id', async (req, res) => {
   await assertProjectAccess(prisma, ctx, r.projectId);
   const [row] = await enrich([r]);
   const elig = r.status === 'PENDING' ? await eligibility(prisma, ctx, r) : { ok: false };
-  res.json({ ...row, canAct: elig.ok, history: await requestHistory(prisma, r.docType, r.entityId) });
+  res.json({ ...row, canAct: elig.ok, history: await requestHistory(prisma, r.docType, r.entityId), match: isMatchDocType(r.docType) ? await matchCheck(prisma, ctx.orgId, r.docType, r.entityId) : null });
 });
 
 const decisionSchema = z.object({ comment: z.string().max(2000).optional() });

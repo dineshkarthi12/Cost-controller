@@ -15,6 +15,7 @@ import { submitDocument, requestHistory } from '../services/workflow.js';
 import { createResource } from '../resources/router.js';
 import { renderPdf } from '../services/pdf.js';
 import { assertRefsInScope } from '../services/lookups.js';
+import { isMatchDocType, matchCheck } from '../services/matchCheck.js';
 
 export const procurementRouter = Router({ mergeParams: true });
 
@@ -385,4 +386,17 @@ procurementRouter.get('/po/:id/open-lines', async (req, res) => {
       invoiceableQty: D(l.receivedQty).minus(D(l.invoicedQty)).toFixed(4),
     })),
   );
+});
+
+/** Match check of an MR, PR or PO: each line against the BOM, its MR / PR, the awarded quotation and the budget. */
+procurementRouter.get('/match-check/:docType/:id', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  const docType = param(req, 'docType').toUpperCase();
+  if (!isMatchDocType(docType)) throw validationError('Match check is available for MR, PR and PO');
+  assertCan(ctx, docType === 'MR' ? 'requisition.view' : 'procurement.view', projectId);
+  const where = { id: param(req, 'id'), projectId };
+  const exists = docType === 'MR' ? await prisma.materialRequisition.count({ where }) : docType === 'PR' ? await prisma.purchaseRequisition.count({ where }) : await prisma.purchaseOrder.count({ where });
+  if (!exists) throw notFound(docType);
+  res.json(await matchCheck(prisma, ctx.orgId, docType, param(req, 'id')));
 });

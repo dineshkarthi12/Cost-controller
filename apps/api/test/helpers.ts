@@ -73,9 +73,12 @@ export function day(offset = 0) {
  * A fresh organisation with one project, users for every role, masters, cost codes and a baselined budget.
  * Every file gets its own organisation, so tests do not depend on each other.
  */
-export async function setupWorld() {
+export async function setupWorld(opts: { matchCheck?: 'ENFORCE' | 'WARN' } = {}) {
   const tag = `T${process.pid}${Date.now().toString(36)}${seq++}`.toUpperCase();
   const org = await bootstrapOrganisation(prisma, { code: tag, name: `Test org ${tag}` });
+  // Tests written before the purchase match check run with it in WARN mode (shown, never blocking);
+  // match-check.test.ts uses the production default, ENFORCE.
+  await prisma.organisation.update({ where: { id: org.id }, data: { settings: { ...((org.settings as object) ?? {}), purchaseMatchCheck: opts.matchCheck ?? 'WARN' } } });
   const hash = await hashPassword(PASSWORD);
   const users = {} as Record<Who, { id: string; email: string }>;
   for (const [key, roleCodes] of Object.entries(ROLES) as Array<[Who, readonly string[]]>) {

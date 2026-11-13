@@ -1,4 +1,3 @@
-import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { Readable } from 'node:stream';
@@ -28,7 +27,15 @@ class LocalStorage implements StorageProvider {
     await fsp.writeFile(p, data, { flag: 'wx' });
   }
   async get(key: string) {
-    return fs.createReadStream(this.resolve(key));
+    // Open first, so a missing file becomes a 404 for this request instead of an unhandled stream error
+    // that would stop the whole server.
+    try {
+      const handle = await fsp.open(this.resolve(key), 'r');
+      return handle.createReadStream();
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new AppError(404, 'FILE_MISSING', 'This file is missing from storage. Upload it again.');
+      throw e;
+    }
   }
   async exists(key: string) {
     try {

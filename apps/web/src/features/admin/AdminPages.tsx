@@ -450,6 +450,8 @@ interface OrgSettings {
   budgetCheckMode: string;
   priceTolerancePct: string;
   overReceiptTolerancePct: string;
+  purchaseMatchCheck: string;
+  qtyTolerancePct: string;
   alertWarnPct: string;
   measurementDuplicateMode: string;
   autoBudgetRevisionFromVariation: boolean;
@@ -553,8 +555,12 @@ function GeneralSettings() {
           <div className="grid gap-3 sm:grid-cols-2">
             <Field label="Budget check on PR/PO" help="WARN shows a warning; BLOCK prevents submission over budget"><Select options={['WARN', 'BLOCK']} value={d.settings.budgetCheckMode} disabled={ro} onChange={(e) => ss({ budgetCheckMode: e.target.value })} /></Field>
             <Field label="Cost alert threshold (%)" help="Warning when incurred + committed reaches this share of budget"><Input inputMode="decimal" value={pct(d.settings.alertWarnPct)} disabled={ro} onChange={(e) => ss({ alertWarnPct: frac(e.target.value) })} /></Field>
-            <Field label="Invoice price tolerance (%)"><Input inputMode="decimal" value={pct(d.settings.priceTolerancePct)} disabled={ro} onChange={(e) => ss({ priceTolerancePct: frac(e.target.value) })} /></Field>
+            <Field label="Rate tolerance (%)" help="Invoice three-way match, and MR / PR / PO rates against the BOM and quotation"><Input inputMode="decimal" value={pct(d.settings.priceTolerancePct)} disabled={ro} onChange={(e) => ss({ priceTolerancePct: frac(e.target.value) })} /></Field>
             <Field label="Over-receipt tolerance (%)"><Input inputMode="decimal" value={pct(d.settings.overReceiptTolerancePct)} disabled={ro} onChange={(e) => ss({ overReceiptTolerancePct: frac(e.target.value) })} /></Field>
+            <Field label="Match check on MR / PR / PO approval" help="ENFORCE: materials outside the BOM cannot be approved, and other differences need a reason and an attached document. WARN: shown only.">
+              <Select options={[{ value: 'ENFORCE', label: 'ENFORCE (recommended)' }, { value: 'WARN', label: 'WARN (show only)' }]} value={d.settings.purchaseMatchCheck ?? 'ENFORCE'} disabled={ro} onChange={(e) => ss({ purchaseMatchCheck: e.target.value })} />
+            </Field>
+            <Field label="Quantity tolerance (%)" help="How far an MR / PR / PO quantity may go above the BOM or its MR / PR"><Input inputMode="decimal" value={pct(d.settings.qtyTolerancePct ?? '0.05')} disabled={ro} onChange={(e) => ss({ qtyTolerancePct: frac(e.target.value) })} /></Field>
           </div>
         </div>
       </Card>
