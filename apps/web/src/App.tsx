@@ -18,6 +18,7 @@ import { GrnNewPage, RfqDetailPage, RfqListPage } from './features/procurement/P
 import { InventoryPage } from './features/stock/InventoryPage';
 import { ClientBillDetail, ClientBillingPage, ContractorBillDetail, ContractorBillsPage, SubcontractSummary } from './features/commercial/BillingPages';
 import { AttendancePage, EquipmentUtilisation, ProgressPage, SchedulePage, VerificationQueuePage } from './features/site/SitePages';
+import { PayrollPage } from './features/site/PayrollPage';
 import { DailyLabourPage, LabourSummaryPage } from './features/site/LabourReportPages';
 import { ImportButton } from './features/admin/ImportDialog';
 import { MaterialPresetButton } from './features/materials/MaterialPresets';
@@ -48,7 +49,7 @@ function Guard({ perm, children }: { perm: string; children: React.ReactNode }) 
 const T = (label: string, path: string, resource?: string, extra: Partial<TabDef> = {}): TabDef => ({ label, path, resource, ...extra });
 
 const MODULE_TABS: Record<string, TabDef[]> = {
-  manpower: [T('Daily labour report', '/manpower/daily', undefined, { element: <DailyLabourPage /> }), T('Labour summary', '/manpower/summary', undefined, { element: <LabourSummaryPage /> }), T('Manpower reports', '/manpower', 'manpowerReports'), T('Attendance register', '/manpower/attendance', undefined, { element: <AttendancePage /> }), T('Workers', '/manpower/workers', 'workers'), T('Labour norms', '/manpower/norms', 'labourNorms')],
+  manpower: [T('Daily labour report', '/manpower/daily', undefined, { element: <DailyLabourPage /> }), T('Labour summary', '/manpower/summary', undefined, { element: <LabourSummaryPage /> }), T('Manpower reports', '/manpower', 'manpowerReports'), T('Attendance register', '/manpower/attendance', undefined, { element: <AttendancePage /> }), T('Payroll', '/manpower/payroll', undefined, { element: <PayrollPage /> }), T('Workers', '/manpower/workers', 'workers'), T('Labour norms', '/manpower/norms', 'labourNorms')],
   diary: [T('Daily site diary', '/site-diary', 'siteDiaries')],
   progress: [T('Progress overview', '/progress', undefined, { element: <ProgressPage /> }), T('Progress entries', '/progress/entries', 'progressEntries')],
   schedule: [T('Gantt & look-ahead', '/schedule', undefined, { element: <SchedulePage /> }), T('Activities', '/schedule/activities', 'activities')],

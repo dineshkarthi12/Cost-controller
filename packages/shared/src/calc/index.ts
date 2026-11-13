@@ -12,3 +12,4 @@ export * from './workReport.js';
 export * from './boqSheet.js';
 export * from './units.js';
 export * from './calendar.js';
+export * from './payroll.js';

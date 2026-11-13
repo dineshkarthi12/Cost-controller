@@ -67,6 +67,7 @@ The API integration tests only accept a test database whose name ends in `_test`
 | Purchase match check | ENFORCE (production default): a project without a BOM, and a material not in the BOM, cannot be approved (reject still works). Within the BOM: "everything matches", approved with no extra step; up to 5 % above the BOM quantity still matches; 10 % above needs a reason and then an attachment (each refusal names what is missing), and the approval is audited as `MATCH_CHECK_OVERRIDE`. A PR from an MR is not counted twice against the BOM; PO rate 1.7 % above / below the BOM rate matches, 4 % above is a difference; PO quantity 10 % above its PR line is a difference; PO rate above the awarded quotation is a difference. WARN shows the check without blocking. Wrong document type → 422, document of another type → 404, non-member → 404. The inbox row carries the match status (`match-check.test.ts`). Other API test files run in WARN mode (`setupWorld`). Approve-button rule in the web app (`logic.test.tsx`). The full demo seed runs under ENFORCE |
 | Stored files | A file missing from local storage answers 404 `FILE_MISSING` and the server keeps serving (it used to stop the whole API process) (`files-missing.test.ts`) |
 | Report reminders | Nothing before the reminder time; at 18:30 India time a site engineer gets one reminder naming the missing DPR and MPR (no labour-report line on a project that does not use it), a QS gets one for the work report, finance gets none, and a second run sends nothing more; once the DPR and MPR are in nothing is due; a project holiday is skipped; switched off in Settings, nothing runs (`report-reminders.test.ts`) |
+| Payroll | Paid days = present + ½ half days, leave and absence unpaid, overtime at 1.5×, workers without attendance at zero (`payroll.test.ts`, shared). Preview for own workers and with subcontractor workers; Excel export with the Payroll and Attendance sheets, live formulas with cached values, totals, a P / H / A grid, audited; reversed or over-long periods refused, non-members 404 (`payroll.test.ts`, API) |
 | Scheduled jobs | The cron endpoint runs only with the exact `CRON_SECRET` bearer token, and wrong or missing tokens get 404 (`auth.test.ts`) |
 | Vercel packaging | Checked by hand, not in CI: the build script ran under `VERCEL=1` against a fresh database, the function bundle was traced with `@vercel/nft`, and the handler was exercised in production mode (`docs/DEPLOY_VERCEL.md`). No real Vercel deployment was made. |
 | Containers | The API and web images were built and run with Docker. Migrations were applied, health was OK, admin login went through nginx, SPA deep links were served, and security headers were present. This was checked by hand, not in an automated suite. |
@@ -75,8 +76,8 @@ The API integration tests only accept a test database whose name ends in `_test`
 
 | Suite | Result |
 |---|---|
-| `@toprock/shared` unit | **56 / 56 passed** (7 files) |
-| `@toprock/api` integration | **189 / 189 passed** (26 files) |
+| `@toprock/shared` unit | **58 / 58 passed** (8 files) |
+| `@toprock/api` integration | **193 / 193 passed** (27 files) |
 | `@toprock/web` components | **16 / 16 passed** (4 files) |
 | Playwright e2e | **5 / 5 passed** (4 desktop journeys, 1 mobile). The mobile test failed once in three runs: the photo page can drop `?capture=1` from the address before the assertion reads it (timing; unrelated to the change being tested) |
 | Typecheck (shared, api, web with `noUnusedLocals`) | **passing** |
