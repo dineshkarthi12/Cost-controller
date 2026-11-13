@@ -1,6 +1,4 @@
 @import 'tailwindcss';
-/* 3D dashboard charts (@niekes/charts-3d) use shadcn-style utility classes: generate them too. */
-@source '../../../node_modules/@niekes/charts-3d/dist';
 
 @theme {
   --font-sans: 'Inter', 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
@@ -17,22 +15,6 @@
   --color-line: #e3e8f0;
   --color-ink: #16213a;
   --color-muted: #5b6475;
-  /* shadcn-style names used by the 3D charts, mapped to the app palette */
-  --color-foreground: #16213a;
-  --color-background: #ffffff;
-  --color-muted-foreground: #5b6475;
-  --color-border: #e3e8f0;
-  --color-ring: #2f74d6;
-}
-
-:root {
-  --background: #ffffff;
-  --foreground: #16213a;
-}
-
-/* Inside 3D charts "muted" is the light wall colour (shadcn meaning), not the app's grey text colour. */
-.chart-3d {
-  --color-muted: #eef2f7;
 }
 
 @layer base {

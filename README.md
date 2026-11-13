@@ -15,7 +15,6 @@ A web application for controlling the cost of construction and interior fit-out 
 | [`IMPLEMENTATION_STATUS.md`](IMPLEMENTATION_STATUS.md) | Status of every module and capability |
 | [`docs/OPERATIONS.md`](docs/OPERATIONS.md) | Deployment, configuration, backup and recovery, security checklist |
 | [`docs/DEPLOY_VERCEL.md`](docs/DEPLOY_VERCEL.md) | Step-by-step Vercel deployment (database, Blob storage, cron) |
-| [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md) | Licences of bundled third-party chart libraries |
 
 ## Stack
 

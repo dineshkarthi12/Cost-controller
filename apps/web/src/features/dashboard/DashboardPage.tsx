@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router';
 import { useQuery } from '@tanstack/react-query';
 import { Area, Bar, BarChart, CartesianGrid, Cell, ComposedChart, Line, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
@@ -10,7 +10,6 @@ import { formatDate, formatMoney, formatMoneyCompact, formatPct, relativeTime } 
 import { Badge, Card, EmptyState, ErrorState, Input, KpiCard, LoadingBlock, ProgressBar, StatusBadge, cx } from '../../components/ui';
 import { Page } from '../../components/layout/AppShell';
 import { ChartCard, ChartTooltip, GRID, SERIES, axisProps, moneyTick } from '../../components/data/charts';
-const DashboardChart3D = lazy(() => import('./Dashboard3D'));
 
 interface Dashboard {
   project: { name: string; code: string; currency: string; startDate: string | null; plannedCompletionDate: string | null };
@@ -51,17 +50,6 @@ interface InboxItem {
 }
 
 const n = (v: unknown) => Number(v ?? 0);
-/** ₹ crore with 2 decimals: the 3D charts print raw numbers in their tooltips. */
-const crore = (v: unknown) => Math.round(Number(v ?? 0) / 1e5) / 100;
-const croreTick = (v: number) => `₹${Number(v.toFixed(2))} Cr`;
-const CHART_MODE_KEY = 'toprock.dashboard.charts';
-function readChartMode() {
-  try {
-    return localStorage.getItem(CHART_MODE_KEY);
-  } catch {
-    return null;
-  }
-}
 const short = (m: string) => new Intl.DateTimeFormat('en-IN', { month: 'short', year: '2-digit', timeZone: 'UTC' }).format(new Date(m + '-01T00:00:00Z'));
 
 function greeting() {
@@ -74,15 +62,6 @@ export function DashboardPage() {
   const { me, project, can } = useAuth();
   const navigate = useNavigate();
   const [range, setRange] = useState({ from: '', to: '' });
-  const [charts3d, setCharts3d] = useState(() => readChartMode() !== '2d');
-  const chooseMode = (on: boolean) => {
-    setCharts3d(on);
-    try {
-      localStorage.setItem(CHART_MODE_KEY, on ? '3d' : '2d');
-    } catch {
-      /* private mode: the choice lasts for this visit */
-    }
-  };
   const dash = useQuery({ queryKey: ['p', 'dashboard', projectId, range], queryFn: () => api.get<Dashboard>(`/projects/${projectId}/dashboard`, range), enabled: !!projectId });
   const ops = useQuery({ queryKey: ['p', 'dashboard-ops', projectId], queryFn: () => api.get<Ops>(`/projects/${projectId}/dashboard/operations`), enabled: !!projectId });
   const inbox = useQuery({ queryKey: ['approvals', 'inbox', projectId], queryFn: () => api.get<InboxItem[]>('/approvals/inbox', { projectId }), enabled: !!projectId });
@@ -105,80 +84,6 @@ export function DashboardPage() {
   const cvNeg = n(k?.costVariance) < 0;
   const physical = k?.physicalProgress ? Number(k.physicalProgress) * 100 : null;
 
-  // The 2D charts: shown when 3D is off, and as the fallback where WebGL is not available.
-  const ring2d = (
-    <>
-      <ResponsiveContainer>
-        <PieChart>
-          <Pie data={[{ v: physical ?? 0 }, { v: 100 - (physical ?? 0) }]} dataKey="v" innerRadius="72%" outerRadius="100%" startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
-            <Cell fill={SERIES[0]} />
-            <Cell fill="#e8edf4" />
-          </Pie>
-        </PieChart>
-      </ResponsiveContainer>
-    </>
-  );
-  const trend2d = d && (
-    <>
-      <ResponsiveContainer>
-        <ComposedChart data={d.charts.costTrend.map((r) => ({ month: short(r.month), Planned: n(r.budget), Incurred: n(r.cumulativeActual), Committed: n(r.committed) }))} margin={{ left: 4, right: 8, top: 4 }}>
-          <CartesianGrid stroke={GRID} vertical={false} />
-          <XAxis dataKey="month" {...axisProps} />
-          <YAxis tickFormatter={moneyTick} {...axisProps} width={64} />
-          <Tooltip content={<ChartTooltip />} />
-          <Bar dataKey="Committed" name="New commitments / month" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={18} />
-          <Line type="monotone" dataKey="Planned" name="Planned budget (linear)" stroke={SERIES[0]} strokeWidth={2} dot={false} />
-          <Area type="monotone" dataKey="Incurred" name="Cost incurred" stroke={SERIES[1]} strokeWidth={2} fill={SERIES[1]} fillOpacity={0.08} />
-        </ComposedChart>
-      </ResponsiveContainer>
-    </>
-  );
-  const dist2d = d && (
-    <>
-      <ResponsiveContainer>
-        <PieChart>
-          <Pie data={d.charts.costBreakdown.map((c) => ({ name: humanize(c.category), value: n(c.amount) }))} dataKey="value" innerRadius="62%" outerRadius="100%" paddingAngle={1} stroke="#fff" strokeWidth={2} isAnimationActive={false}>
-            {d.charts.costBreakdown.map((c, i) => (
-              <Cell key={c.category} fill={SERIES[i % SERIES.length]} />
-            ))}
-          </Pie>
-          <Tooltip content={<ChartTooltip />} />
-        </PieChart>
-      </ResponsiveContainer>
-    </>
-  );
-  const bva2d = d && (
-    <>
-      <ResponsiveContainer>
-        <BarChart data={d.charts.budgetVsActualVsForecast.map((c) => ({ category: humanize(c.category), Budget: n(c.budget), Incurred: n(c.actual), EAC: n(c.forecast) }))} barGap={2} margin={{ left: 4, right: 8, top: 4 }}>
-          <CartesianGrid stroke={GRID} vertical={false} />
-          <XAxis dataKey="category" {...axisProps} />
-          <YAxis tickFormatter={moneyTick} {...axisProps} width={64} />
-          <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f1f4f9' }} />
-          <Bar dataKey="Budget" name="Approved budget" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={22} />
-          <Bar dataKey="Incurred" name="Cost incurred" fill={SERIES[1]} radius={[4, 4, 0, 0]} maxBarSize={22} />
-          <Bar dataKey="EAC" name="Forecast (EAC)" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={22} />
-        </BarChart>
-      </ResponsiveContainer>
-    </>
-  );
-  const cash2d = d && (
-    <>
-      <ResponsiveContainer>
-        <BarChart data={d.charts.cashFlow.map((c) => ({ month: short(c.month), 'Planned inflow': n(c.plannedInflow), 'Actual inflow': n(c.actualInflow), 'Planned outflow': n(c.plannedOutflow), 'Actual outflow': n(c.actualOutflow) }))} barGap={1} margin={{ left: 4, right: 8, top: 4 }}>
-          <CartesianGrid stroke={GRID} vertical={false} />
-          <XAxis dataKey="month" {...axisProps} />
-          <YAxis tickFormatter={moneyTick} {...axisProps} width={64} />
-          <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f1f4f9' }} />
-          <Bar dataKey="Planned inflow" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={10} />
-          <Bar dataKey="Actual inflow" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={10} />
-          <Bar dataKey="Planned outflow" fill={SERIES[1]} radius={[4, 4, 0, 0]} maxBarSize={10} />
-          <Bar dataKey="Actual outflow" fill={SERIES[3]} radius={[4, 4, 0, 0]} maxBarSize={10} />
-        </BarChart>
-      </ResponsiveContainer>
-    </>
-  );
-
   return (
     <Page>
       <div className="mb-5 flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -192,10 +97,6 @@ export function DashboardPage() {
         </div>
         <div className="flex flex-wrap items-center gap-2" role="group" aria-label="Date range for trends">
           <Link to="/daily-pack" className="inline-flex h-9 items-center gap-2 rounded-lg bg-[#128C7E] px-3.5 text-sm font-medium text-white hover:bg-[#0f7a6e]">Daily send (WhatsApp) <ArrowRight className="h-4 w-4" /></Link>
-          <div className="inline-flex h-9 rounded-lg border border-line bg-white p-0.5" role="group" aria-label="Chart style">
-            <button type="button" className={cx('rounded-md px-3 text-xs font-medium', !charts3d ? 'bg-navy-800 text-white' : 'text-muted hover:text-ink')} aria-pressed={!charts3d} onClick={() => chooseMode(false)}>2D</button>
-            <button type="button" className={cx('rounded-md px-3 text-xs font-medium', charts3d ? 'bg-navy-800 text-white' : 'text-muted hover:text-ink')} aria-pressed={charts3d} onClick={() => chooseMode(true)}>3D</button>
-          </div>
           <Input type="date" className="w-auto" value={range.from} onChange={(e) => setRange({ ...range, from: e.target.value })} aria-label="Trend from" />
           <span className="text-xs text-muted">to</span>
           <Input type="date" className="w-auto" value={range.to} onChange={(e) => setRange({ ...range, to: e.target.value })} aria-label="Trend to" />
@@ -263,14 +164,16 @@ export function DashboardPage() {
           <div className="grid gap-4 lg:grid-cols-12">
             <Card title="Project progress" className="lg:col-span-3" subtitle="Weighted by activity">
               <div className="flex items-center gap-4 lg:flex-col">
-                {charts3d && (
-                  <p className="w-full text-sm">
-                    <strong className="text-2xl font-semibold">{physical === null ? '—' : `${physical.toFixed(0)}%`}</strong> <span className="text-xs text-muted">physical · by WBS below</span>
-                  </p>
-                )}
-                <div className={cx('relative shrink-0', charts3d ? 'h-64 w-full' : 'h-36 w-36')}>
-                  {charts3d ? <Suspense fallback={ring2d}><DashboardChart3D kind="bar" className="h-64 w-full" width={340} height={330} label="Progress by WBS, 3D bars" data={d.charts.wbsProgress.map((w) => ({ wbs: w.name.slice(0, 2), percent: w.percent }))} index="wbs" series={[{ key: 'percent', label: 'Complete', color: SERIES[0] }]} formatY={(v) => `${v}%`} /></Suspense> : ring2d}
-                  <div className={cx('pointer-events-none absolute inset-0 flex flex-col items-center justify-center', charts3d && 'hidden')}>
+                <div className="relative h-36 w-36 shrink-0">
+                  <ResponsiveContainer>
+                    <PieChart>
+                      <Pie data={[{ v: physical ?? 0 }, { v: 100 - (physical ?? 0) }]} dataKey="v" innerRadius="72%" outerRadius="100%" startAngle={90} endAngle={-270} stroke="none" isAnimationActive={false}>
+                        <Cell fill={SERIES[0]} />
+                        <Cell fill="#e8edf4" />
+                      </Pie>
+                    </PieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
                     <span className="text-2xl font-semibold">{physical === null ? '—' : `${physical.toFixed(0)}%`}</span>
                     <span className="text-[11px] text-muted">physical</span>
                   </div>
@@ -299,8 +202,18 @@ export function DashboardPage() {
               ]}
               table={{ columns: ['Month', 'Planned', 'Incurred (cum.)', 'Committed'], rows: d.charts.costTrend.map((r) => [short(r.month), formatMoneyCompact(r.budget), formatMoneyCompact(r.cumulativeActual), formatMoneyCompact(r.committed)]) }}
               chart={
-                <div className={charts3d ? 'h-80' : 'h-64'}>
-                  {charts3d ? <Suspense fallback={trend2d}><DashboardChart3D kind="area" label="Cost trend in ₹ crore, 3D area chart" data={d.charts.costTrend.map((r) => ({ month: short(r.month), planned: crore(r.budget), incurred: crore(r.cumulativeActual), committed: crore(r.committed) }))} index="month" series={[{ key: 'planned', label: 'Planned budget (linear)', color: SERIES[0] }, { key: 'incurred', label: 'Cost incurred', color: SERIES[1] }, { key: 'committed', label: 'New commitments / month', color: SERIES[2] }]} formatY={croreTick} /></Suspense> : trend2d}
+                <div className="h-64">
+                  <ResponsiveContainer>
+                    <ComposedChart data={d.charts.costTrend.map((r) => ({ month: short(r.month), Planned: n(r.budget), Incurred: n(r.cumulativeActual), Committed: n(r.committed) }))} margin={{ left: 4, right: 8, top: 4 }}>
+                      <CartesianGrid stroke={GRID} vertical={false} />
+                      <XAxis dataKey="month" {...axisProps} />
+                      <YAxis tickFormatter={moneyTick} {...axisProps} width={64} />
+                      <Tooltip content={<ChartTooltip />} />
+                      <Bar dataKey="Committed" name="New commitments / month" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={18} />
+                      <Line type="monotone" dataKey="Planned" name="Planned budget (linear)" stroke={SERIES[0]} strokeWidth={2} dot={false} />
+                      <Area type="monotone" dataKey="Incurred" name="Cost incurred" stroke={SERIES[1]} strokeWidth={2} fill={SERIES[1]} fillOpacity={0.08} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
                 </div>
               }
             />
@@ -311,9 +224,18 @@ export function DashboardPage() {
               table={{ columns: ['Category', 'Amount', 'Share'], rows: d.charts.costBreakdown.map((c) => [humanize(c.category), formatMoneyCompact(c.amount), pctOf(c.amount, k.incurredCost)]) }}
               chart={
                 <div>
-                  <div className={cx('relative mx-auto', charts3d ? 'h-64 w-full' : 'h-36 w-36')}>
-                    {charts3d ? <Suspense fallback={dist2d}><DashboardChart3D kind="bar" className="h-64 w-full" width={340} height={330} label="Cost distribution in ₹ crore, 3D bars" data={d.charts.costBreakdown.map((c) => ({ category: humanize(c.category), amount: crore(c.amount) }))} index="category" series={[{ key: 'amount', label: 'Cost incurred', color: SERIES[0] }]} formatY={croreTick} /></Suspense> : dist2d}
-                    <div className={cx('pointer-events-none absolute inset-0 flex flex-col items-center justify-center', charts3d && 'hidden')}>
+                  <div className="relative mx-auto h-36 w-36">
+                    <ResponsiveContainer>
+                      <PieChart>
+                        <Pie data={d.charts.costBreakdown.map((c) => ({ name: humanize(c.category), value: n(c.amount) }))} dataKey="value" innerRadius="62%" outerRadius="100%" paddingAngle={1} stroke="#fff" strokeWidth={2} isAnimationActive={false}>
+                          {d.charts.costBreakdown.map((c, i) => (
+                            <Cell key={c.category} fill={SERIES[i % SERIES.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip content={<ChartTooltip />} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                    <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
                       <span className="text-sm font-semibold">{formatMoneyCompact(k.incurredCost as string, cur)}</span>
                       <span className="text-[10px] text-muted">total</span>
                     </div>
@@ -343,8 +265,18 @@ export function DashboardPage() {
               ]}
               table={{ columns: ['Category', 'Budget', 'Incurred', 'Committed', 'EAC'], rows: d.charts.budgetVsActualVsForecast.map((c) => [humanize(c.category), formatMoneyCompact(c.budget), formatMoneyCompact(c.actual), formatMoneyCompact(c.committed), formatMoneyCompact(c.forecast)]) }}
               chart={
-                <div className={charts3d ? 'h-80' : 'h-64'}>
-                  {charts3d ? <Suspense fallback={bva2d}><DashboardChart3D kind="bar" label="Budget vs actual vs forecast in ₹ crore, 3D bars" data={d.charts.budgetVsActualVsForecast.map((c) => ({ category: humanize(c.category), budget: crore(c.budget), incurred: crore(c.actual), eac: crore(c.forecast) }))} index="category" series={[{ key: 'budget', label: 'Approved budget', color: SERIES[0] }, { key: 'incurred', label: 'Cost incurred', color: SERIES[1] }, { key: 'eac', label: 'Forecast (EAC)', color: SERIES[2] }]} formatY={croreTick} /></Suspense> : bva2d}
+                <div className="h-64">
+                  <ResponsiveContainer>
+                    <BarChart data={d.charts.budgetVsActualVsForecast.map((c) => ({ category: humanize(c.category), Budget: n(c.budget), Incurred: n(c.actual), EAC: n(c.forecast) }))} barGap={2} margin={{ left: 4, right: 8, top: 4 }}>
+                      <CartesianGrid stroke={GRID} vertical={false} />
+                      <XAxis dataKey="category" {...axisProps} />
+                      <YAxis tickFormatter={moneyTick} {...axisProps} width={64} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f1f4f9' }} />
+                      <Bar dataKey="Budget" name="Approved budget" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={22} />
+                      <Bar dataKey="Incurred" name="Cost incurred" fill={SERIES[1]} radius={[4, 4, 0, 0]} maxBarSize={22} />
+                      <Bar dataKey="EAC" name="Forecast (EAC)" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={22} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               }
             />
@@ -359,8 +291,19 @@ export function DashboardPage() {
               ]}
               table={{ columns: ['Month', 'Plan in', 'Actual in', 'Plan out', 'Actual out'], rows: d.charts.cashFlow.map((c) => [short(c.month), formatMoneyCompact(c.plannedInflow), formatMoneyCompact(c.actualInflow), formatMoneyCompact(c.plannedOutflow), formatMoneyCompact(c.actualOutflow)]) }}
               chart={
-                <div className={charts3d ? 'h-80' : 'h-64'}>
-                  {charts3d ? <Suspense fallback={cash2d}><DashboardChart3D kind="bar" label="Cash flow in ₹ crore, 3D bars" data={d.charts.cashFlow.map((c) => ({ month: short(c.month), plannedIn: crore(c.plannedInflow), actualIn: crore(c.actualInflow), plannedOut: crore(c.plannedOutflow), actualOut: crore(c.actualOutflow) }))} index="month" series={[{ key: 'plannedIn', label: 'Planned inflow', color: SERIES[0] }, { key: 'actualIn', label: 'Actual inflow', color: SERIES[2] }, { key: 'plannedOut', label: 'Planned outflow', color: SERIES[1] }, { key: 'actualOut', label: 'Actual outflow', color: SERIES[3] }]} formatY={croreTick} /></Suspense> : cash2d}
+                <div className="h-64">
+                  <ResponsiveContainer>
+                    <BarChart data={d.charts.cashFlow.map((c) => ({ month: short(c.month), 'Planned inflow': n(c.plannedInflow), 'Actual inflow': n(c.actualInflow), 'Planned outflow': n(c.plannedOutflow), 'Actual outflow': n(c.actualOutflow) }))} barGap={1} margin={{ left: 4, right: 8, top: 4 }}>
+                      <CartesianGrid stroke={GRID} vertical={false} />
+                      <XAxis dataKey="month" {...axisProps} />
+                      <YAxis tickFormatter={moneyTick} {...axisProps} width={64} />
+                      <Tooltip content={<ChartTooltip />} cursor={{ fill: '#f1f4f9' }} />
+                      <Bar dataKey="Planned inflow" fill={SERIES[0]} radius={[4, 4, 0, 0]} maxBarSize={10} />
+                      <Bar dataKey="Actual inflow" fill={SERIES[2]} radius={[4, 4, 0, 0]} maxBarSize={10} />
+                      <Bar dataKey="Planned outflow" fill={SERIES[1]} radius={[4, 4, 0, 0]} maxBarSize={10} />
+                      <Bar dataKey="Actual outflow" fill={SERIES[3]} radius={[4, 4, 0, 0]} maxBarSize={10} />
+                    </BarChart>
+                  </ResponsiveContainer>
                 </div>
               }
             />

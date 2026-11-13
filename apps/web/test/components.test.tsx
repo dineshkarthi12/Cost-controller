@@ -1,4 +1,3 @@
-import DashboardChart3D from '../src/features/dashboard/Dashboard3D';
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -49,13 +48,5 @@ describe('StatusBadge', () => {
   it('humanises workflow statuses', () => {
     render(<StatusBadge status="PARTIALLY_RECEIVED" />);
     expect(screen.getByText('Partially Received')).toBeInTheDocument();
-  });
-});
-
-describe('3D chart', () => {
-  it('draws the bars as SVG with an accessible name', () => {
-    const { container } = render(<DashboardChart3D kind="bar" label="Budget vs actual, 3D bars" data={[{ c: 'Material', budget: 10, eac: 12 }, { c: 'Labour', budget: 4, eac: 3 }]} index="c" series={[{ key: 'budget', label: 'Budget', color: '#2a78d6' }, { key: 'eac', label: 'EAC', color: '#1baf7a' }]} formatY={(v) => String(v)} />);
-    expect(screen.getByLabelText('Budget vs actual, 3D bars')).toBeInTheDocument();
-    expect(container.querySelector('svg')).not.toBeNull();
   });
 });
