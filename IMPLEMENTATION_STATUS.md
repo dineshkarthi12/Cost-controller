@@ -18,7 +18,7 @@ Many registers use the shared **resource framework**: field metadata in `package
 
 | # | Module | Status | What exists | Gaps |
 |---|---|---|---|---|
-| 1 | Dashboard | Working | Cost KPIs from the ledger (BAC, incurred, committed, remaining, EAC, CV, CPI/SPI), progress by WBS, cost trend, distribution, alerts, operations widgets, approvals, date filter | Portfolio view is basic |
+| 1 | Dashboard | Working | Cost KPIs from the ledger (BAC, incurred, committed, remaining, EAC, CV, CPI/SPI), progress by WBS, cost trend, distribution, alerts, operations widgets, approvals, date filter. **2D / 3D charts** (choice remembered per browser): in 3D the five charts are flat-shaded SVG 3D charts (`@niekes/charts-3d`): progress by WBS, cost trend as 3D areas, cost by category, budget vs actual vs forecast and cash flow as 3D bars; drag or arrow keys turn them, double-click resets, hover shows the value in ₹ crore; loaded only on the dashboard | Portfolio view is basic. 3D has no donut or ring (the library has none), so distribution and progress use bars |
 | 2 | Projects | Working | Create/edit with optional standard template (WBS, cost codes, main store), members, project roles, project-level approval limits, status, demo flag | — |
 | 3 | Approvals & Workflow | Working · tested | Inbox, history, approve/return/reject/withdraw, delegation, SLA/overdue, escalation job, SoD, final-step approval limit | Escalation job not covered by tests |
 | 4 | Tasks & Issues | Working | My tasks, Kanban (drag and drop), list, calendar, contributors, dependencies, handover, recurring tasks, overdue alerts | No automated tests |
