@@ -40,6 +40,7 @@ import { labourRouter, projectLabourRouter } from './routes/labourReports.js';
 import { dailyDigestRouter } from './routes/dailyDigest.js';
 import { dailyPackRouter, publicPackRouter } from './routes/dailyPack.js';
 import { dailyPackJob } from './services/dailyPack.js';
+import { reportReminders } from './services/reportReminders.js';
 import { bomRouter } from './routes/bom.js';
 import { workReportsRouter } from './routes/workReports.js';
 import { runAllJobs } from './jobs.js';
@@ -87,7 +88,8 @@ export function createApp() {
     if (!config.cronSecret || given.length !== expected.length || !timingSafeEqual(given, expected)) {
       return res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Endpoint not found' } });
     }
-    res.json(await dailyPackJob());
+    // The evening cron also sends the missing-report reminders (each at most once a day).
+    res.json({ pack: await dailyPackJob(), reminders: await reportReminders() });
   });
   // Signed links to the end-of-day pack open without a login (WhatsApp recipients).
   app.use('/api/public', publicPackRouter);
