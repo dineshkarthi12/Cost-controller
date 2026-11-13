@@ -462,6 +462,8 @@ interface OrgSettings {
   whatsappContacts: Array<{ name: string; role: string; phone: string; email: string; dailyPack: boolean }>;
   dailyPackAuto: boolean;
   dailyPackTime: string;
+  reportReminders: boolean;
+  reportReminderTime: string;
 }
 interface SettingsResp {
   org: { id: string; name: string; code: string; baseCurrency: string; timezone: string; isDemo: boolean };
@@ -593,6 +595,11 @@ function GeneralSettings() {
             <Checkbox label="Every day, make the pack ready (and send it where possible) at" checked={d.settings.dailyPackAuto} disabled={ro} onChange={(e) => ss({ dailyPackAuto: e.target.checked })} />
             <Field label="Time"><Input type="time" className="w-32" value={d.settings.dailyPackTime} disabled={ro || !d.settings.dailyPackAuto} onChange={(e) => ss({ dailyPackTime: e.target.value })} /></Field>
             <p className="max-w-xl text-xs text-muted">With the WhatsApp Business API set up, the pack is sent by itself. Without it, the project managers and administrators get a notification at this time and send it in one tap. Contacts with an email get the PDF by email.</p>
+          </div>
+          <div className="mt-3 flex flex-wrap items-end gap-4 border-t border-line pt-3">
+            <Checkbox label="Remind people about today's missing reports at" checked={d.settings.reportReminders ?? true} disabled={ro} onChange={(e) => ss({ reportReminders: e.target.checked })} />
+            <Field label="Time"><Input type="time" className="w-32" value={d.settings.reportReminderTime ?? '18:00'} disabled={ro || !(d.settings.reportReminders ?? true)} onChange={(e) => ss({ reportReminderTime: e.target.value })} /></Field>
+            <p className="max-w-xl text-xs text-muted">On a project's working days, site engineers get one reminder if the site diary (DPR), manpower report (MPR) or the evening measurement of the daily labour report is missing. Office QS / estimation staff get one if their daily work report is not submitted (not on Sundays).</p>
           </div>
         </div>
       </Card>

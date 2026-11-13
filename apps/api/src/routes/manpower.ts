@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { D, zDate, zDecimal, RESOURCES } from '@toprock/shared';
+import { D, payrollRows, zDate, zDecimal, RESOURCES } from '@toprock/shared';
 import { prisma, transaction } from '../lib/prisma.js';
 import { param, parseBody } from '../lib/http.js';
 import { validationError, businessRule } from '../lib/errors.js';
@@ -9,6 +9,7 @@ import { ctxOf } from '../middleware/auth.js';
 import { assertCan, assertProjectAccess } from '../services/access.js';
 import { audit } from '../services/audit.js';
 import { createResource } from '../resources/router.js';
+import { payrollWorkbook } from '../services/payrollExport.js';
 
 export const manpowerRouter = Router({ mergeParams: true });
 
@@ -89,4 +90,50 @@ manpowerRouter.post('/attendance/to-mpr', async (req, res) => {
   });
   const mpr = await createResource(ctx, RESOURCES.manpowerReports, { orgId: ctx.orgId, projectId }, { date, shift, contractorId: contractorId ?? undefined, remarks: `Generated from attendance register (${recs.length} workers)`, lines });
   res.status(201).json(mpr);
+});
+
+// ───────── Payroll from the attendance register ─────────
+
+async function payrollData(projectId: string, query: Record<string, unknown>) {
+  const from = typeof query.from === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(query.from) ? query.from : isoDate(new Date(Date.UTC(new Date().getUTCFullYear(), new Date().getUTCMonth(), 1)))!;
+  const to = typeof query.to === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(query.to) ? query.to : isoDate(new Date())!;
+  const scope = query.scope === 'ALL' ? 'ALL' : 'OWN';
+  const f = toDateOnly(from)!, t = toDateOnly(to)!;
+  if (t < f) throw validationError('The end date must be on or after the start date');
+  if ((t.getTime() - f.getTime()) / 86_400_000 > 62) throw validationError('Choose a period of at most 2 months');
+  const records = await prisma.attendanceRecord.findMany({ where: { projectId, date: { gte: f, lte: t }, ...(scope === 'OWN' ? { worker: { contractorId: null } } : {}) }, select: { workerId: true, date: true, status: true, regularHours: true, overtimeHours: true } });
+  const ids = [...new Set(records.map((r) => r.workerId))];
+  // Active workers of the scope, plus anyone with attendance in the period (they may have left since).
+  const workers = await prisma.worker.findMany({ where: { projectId, OR: [{ id: { in: ids } }, { isActive: true }], ...(scope === 'OWN' ? { contractorId: null } : {}) }, include: { contractor: { select: { name: true } } }, orderBy: [{ trade: 'asc' }, { name: 'asc' }] });
+  const { rows, totals } = payrollRows(
+    workers.map((w) => ({ id: w.id, workerCode: w.workerCode, name: w.name, trade: w.trade, category: w.category, hourlyRate: w.hourlyRate.toString(), contractor: w.contractor?.name ?? null })),
+    records.map((r) => ({ workerId: r.workerId, date: isoDate(r.date)!, status: r.status, regularHours: r.regularHours.toString(), overtimeHours: r.overtimeHours.toString() })),
+  );
+  const dates: string[] = [];
+  for (let d = f.getTime(); d <= t.getTime(); d += 86_400_000) dates.push(isoDate(new Date(d))!);
+  return { from, to, scope: scope as 'OWN' | 'ALL', dates, rows, totals };
+}
+
+/** Payroll preview: per worker, paid days, hours and pay for the period (default: this month to today). */
+manpowerRouter.get('/payroll', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'manpower.view', projectId);
+  const p = await payrollData(projectId, req.query);
+  res.json({ ...p, rows: p.rows.map(({ days: _days, ...r }) => r) });
+});
+
+/** Payroll workbook (Excel) — audited. */
+manpowerRouter.get('/payroll/export', async (req, res) => {
+  const ctx = ctxOf(req);
+  const projectId = param(req, 'projectId');
+  assertCan(ctx, 'manpower.view', projectId);
+  assertCan(ctx, 'report.export', projectId);
+  const p = await payrollData(projectId, req.query);
+  const project = await prisma.project.findUniqueOrThrow({ where: { id: projectId }, select: { code: true, name: true } });
+  const buf = await payrollWorkbook({ project, ...p });
+  await audit(prisma, ctx, { action: 'EXPORT', entityType: 'payroll', entityId: null, projectId, summary: `Payroll ${p.from} to ${p.to} exported (${p.rows.length} workers, ${p.scope === 'OWN' ? 'own' : 'all'} labour, gross ₹${p.totals.gross})` });
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.setHeader('Content-Disposition', `attachment; filename="Payroll_${project.code}_${p.from}_to_${p.to}.xlsx"`);
+  res.send(buf);
 });

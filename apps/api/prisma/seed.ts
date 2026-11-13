@@ -105,6 +105,46 @@ async function createUser(orgId: string, u: { key: string; email?: string; name:
   });
 }
 
+// Bill of materials linked to the BOQ and the material list. MR / PR / PO approvals are checked against it
+// (purchase match check). Aggregate 20 mm is left out on purpose, and the conduit BOM rate is below the
+// requisition rate, so the approval inbox shows one blocked and one "difference" example.
+const RIVERSIDE_BOM: Array<[string, string, string, string, string, string, string]> = [
+  // [refCode, title, BOQ item, material, qty, wastage, rate]
+  ['1.01', 'RCC M30 in columns, beams & slabs', 'B-301', 'RMC-M30', '9500', '0.02', '5200'],
+  ['1.02', 'Reinforcement Fe500D', 'B-302', 'STL-FE500', '1900', '0.03', '59000'],
+  ['1.03', 'Cement for concrete, masonry & plaster', 'B-401', 'CEM-OPC53', '44000', '0', '380'],
+  ['1.04', 'AAC block masonry 200 mm', 'B-401', 'BLK-AAC', '190000', '0.03', '68'],
+  ['1.05', 'Electrical conduits', 'B-501', 'ELE-CND25', '120000', '0.02', '35'],
+  ['1.06', 'Vitrified tile flooring', 'B-601', 'TIL-VT600', '42000', '0.05', '720'],
+];
+
+/** Creates the Riverside Heights BOM (also for demo databases seeded before the BOM existed). */
+async function seedRiversideBom(orgId: string, projectId: string) {
+  const boq = new Map((await prisma.boqItem.findMany({ where: { projectId }, select: { id: true, itemCode: true } })).map((b) => [b.itemCode, b.id]));
+  const mats = new Map((await prisma.material.findMany({ where: { orgId }, select: { id: true, code: true, name: true, unit: true } })).map((m) => [m.code, m]));
+  const author = await prisma.user.findFirst({ where: { orgId, email: `arun.prakash@${DOMAIN}` }, select: { id: true } });
+  if (!author) return false;
+  for (const [i, [refCode, title, boqCode, mat, qty, wastage, rate]] of RIVERSIDE_BOM.entries()) {
+    const m = mats.get(mat);
+    if (!m) continue;
+    const totalQty = (Number(qty) * (1 + Number(wastage))).toFixed(4);
+    await prisma.bomItem.create({
+      data: {
+        projectId,
+        lineNo: i + 1,
+        sheet: 'CIVIL-BOM',
+        refCode,
+        title,
+        boqRef: boqCode,
+        boqItemId: boq.get(boqCode) ?? null,
+        createdById: author.id,
+        lines: { create: [{ lineNo: 1, kind: 'MATERIAL', description: m.name, qty, wastagePct: wastage, totalQty, unit: m.unit, rate, amount: (Number(totalQty) * Number(rate)).toFixed(2), materialId: m.id, rateSource: 'MANUAL' }] },
+      },
+    });
+  }
+  return true;
+}
+
 async function main() {
   const org = await bootstrapOrganisation(prisma, { code: 'TOPROCK', name: 'TOPROCK GLOBAL', isDemo: DEMO });
   const admin = await createUser(org.id, { key: 'admin', name: 'System Administrator', designation: 'Administrator', department: 'IT', roles: ['SUPER_ADMIN'], employeeId: 'TRG-0001' });
@@ -142,6 +182,9 @@ async function main() {
 
   if (!DEMO) return;
   if (await prisma.project.count({ where: { orgId: org.id } })) {
+    // Demo databases seeded before the BOM existed: add it, so the purchase match check has something to check.
+    const rh = await prisma.project.findFirst({ where: { orgId: org.id, code: 'RH', isDemo: true }, select: { id: true } });
+    if (rh && !(await prisma.bomItem.count({ where: { projectId: rh.id } })) && (await seedRiversideBom(org.id, rh.id))) console.log('✔ Riverside Heights BOM added to the existing demo data');
     console.log('Demo data already present — skipping. Run `npm run db:reset` to rebuild.');
     return;
   }
@@ -356,34 +399,7 @@ async function main() {
     ['A-300', 'A-310', 'SS', 60], ['A-220', 'A-320', 'SS', 20], ['A-300', 'A-400', 'SS', 80], ['A-400', 'A-500', 'SS', 10],
     ['A-400', 'A-600', 'SS', 100], ['A-600', 'A-610', 'SS', 190], ['A-610', 'A-900', 'FS', 0], ['A-310', 'A-900', 'FS', 0],
   ] as const) await A.post(`${P}/schedule/dependencies`, { predecessorId: acts[pred].id, successorId: acts[succ].id, type, lagDays: lag });
-  // Bill of materials linked to the BOQ and the material list. MR / PR / PO approvals are checked against it
-  // (purchase match check). Aggregate 20 mm is left out on purpose, and the conduit BOM rate is below the
-  // requisition rate, so the approval inbox shows one blocked and one "difference" example.
-  const bomDefs: Array<[string, string, string, string, string, string, string]> = [
-    // [refCode, title, BOQ item, material, qty, wastage, rate]
-    ['1.01', 'RCC M30 in columns, beams & slabs', 'B-301', 'RMC-M30', '9500', '0.02', '5200'],
-    ['1.02', 'Reinforcement Fe500D', 'B-302', 'STL-FE500', '1900', '0.03', '59000'],
-    ['1.03', 'Cement for concrete, masonry & plaster', 'B-401', 'CEM-OPC53', '44000', '0', '380'],
-    ['1.04', 'AAC block masonry 200 mm', 'B-401', 'BLK-AAC', '190000', '0.03', '68'],
-    ['1.05', 'Electrical conduits', 'B-501', 'ELE-CND25', '120000', '0.02', '35'],
-    ['1.06', 'Vitrified tile flooring', 'B-601', 'TIL-VT600', '42000', '0.05', '720'],
-  ];
-  for (const [i, [refCode, title, boqCode, mat, qty, wastage, rate]] of bomDefs.entries()) {
-    const totalQty = (Number(qty) * (1 + Number(wastage))).toFixed(4);
-    await prisma.bomItem.create({
-      data: {
-        projectId: RH.id,
-        lineNo: i + 1,
-        sheet: 'CIVIL-BOM',
-        refCode,
-        title,
-        boqRef: boqCode,
-        boqItemId: boq[boqCode].id,
-        createdById: users['arun.prakash'].id,
-        lines: { create: [{ lineNo: 1, kind: 'MATERIAL', description: mats[mat].name, qty, wastagePct: wastage, totalQty, unit: mats[mat].unit, rate, amount: (Number(totalQty) * Number(rate)).toFixed(2), materialId: mats[mat].id, rateSource: 'MANUAL' }] },
-      },
-    });
-  }
+  await seedRiversideBom(org.id, RH.id);
   console.log('✔ BOQ, activities, progress, BOM');
 
   // ───────── Subcontracts ─────────
