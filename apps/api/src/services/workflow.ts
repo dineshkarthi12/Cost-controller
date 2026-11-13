@@ -7,6 +7,7 @@ import { audit } from './audit.js';
 import { notify } from './notifications.js';
 import { setRegisterStatus } from './register.js';
 import type { DocHandler, WorkflowEntity } from './handlers/types.js';
+import { assertMatchApprovable } from './matchCheck.js';
 
 const handlers = new Map<string, DocHandler>();
 
@@ -200,6 +201,12 @@ export async function decide(ctx: AccessContext, requestId: string, decision: De
     const already = await tx.approvalAction.findFirst({ where: { requestId, stepNo: step.stepNo, actorId: ctx.user.id, action: 'APPROVE' } });
     if (already) throw conflict('You have already approved this step');
     const e = await loadEntity(tx, h, req.entityId);
+    // MR / PR / PO: compare with the BOM, source document, quotation and budget before anyone approves.
+    if (decision === 'APPROVE') {
+      const match = await assertMatchApprovable(tx, ctx.orgId, req.docType, e.id, comment);
+      if (match && match.status !== 'MATCH')
+        await audit(tx, ctx, { action: 'MATCH_CHECK_OVERRIDE', entityType: h.model, entityId: e.id, projectId: e.projectId, summary: `${req.title} approved at ${step.name} with differences: ${match.summary}`, reason: comment, after: { status: match.status, mode: match.mode, attachments: match.attachments, counts: match.counts } });
+    }
     await tx.approvalAction.create({ data: { requestId, stepNo: step.stepNo, actorId: ctx.user.id, onBehalfOfId: elig.onBehalfOf ?? null, action: decision, comment: comment ?? null } });
 
     if (decision === 'APPROVE') {

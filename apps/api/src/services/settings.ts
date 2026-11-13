@@ -8,6 +8,14 @@ export const orgSettingsSchema = z.object({
   budgetCheckMode: z.enum(['WARN', 'BLOCK']).default('WARN'),
   priceTolerancePct: z.string().regex(/^\d+(\.\d+)?$/).default('0.02'),
   overReceiptTolerancePct: z.string().regex(/^\d+(\.\d+)?$/).default('0.00'),
+  /**
+   * Match check on MR / PR / PO approval (BOM, source document, quotation, budget).
+   * ENFORCE: materials outside the BOM cannot be approved; other differences need a reason and an attachment.
+   * WARN: the check is shown but never blocks.
+   */
+  purchaseMatchCheck: z.enum(['ENFORCE', 'WARN']).default('ENFORCE'),
+  /** Quantity tolerance of the match check (fraction; 0.05 = 5 %). The rate tolerance is priceTolerancePct. */
+  qtyTolerancePct: z.string().regex(/^\d+(\.\d+)?$/).default('0.05'),
   alertWarnPct: z.string().regex(/^\d+(\.\d+)?$/).default('0.95'),
   measurementDuplicateMode: z.enum(['BLOCK_UNLESS_REASON', 'WARN']).default('BLOCK_UNLESS_REASON'),
   autoBudgetRevisionFromVariation: z.boolean().default(true),

@@ -11,6 +11,7 @@ import { Badge, Button, Card, Dialog, Field, Input, Select, StatusBadge, TabPane
 import { DataTable } from '../../components/data/DataTable';
 import { RefSelect } from '../../components/forms/RefSelect';
 import { Page, PageHeader } from '../../components/layout/AppShell';
+import { approveBlockedReason, MATCH_DOC_TYPES, MatchBadge, MatchCheckView, type MatchResult, type MatchStatus } from '../../components/record/MatchCheck';
 
 interface ApprovalRow {
   id: string;
@@ -29,6 +30,8 @@ interface ApprovalRow {
   project: { code: string; name: string } | null;
   onBehalfOf?: string | null;
   selfSubmitted?: boolean;
+  /** Purchase match check summary (MR / PR / PO in the inbox). */
+  match?: { status: MatchStatus; summary: string; mode: string } | null;
 }
 
 interface Delegation {
@@ -73,6 +76,12 @@ export function ApprovalsPage() {
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  const decideMatch = useQuery({
+    queryKey: ['approvals', 'detail', decide?.row.id],
+    queryFn: () => api.get<{ match: MatchResult | null }>(`/approvals/${decide!.row.id}`),
+    enabled: decide?.action === 'approve' && MATCH_DOC_TYPES.includes(decide.row.docType),
+  });
+  const approveHold = decide?.action === 'approve' ? approveBlockedReason(decideMatch.data?.match, comment) : null;
   const saveDelegation = useMutation({ mutationFn: () => api.post('/approvals/delegations', dForm), onSuccess: () => { toast.success('Delegation created'); setDelegate(false); void qc.invalidateQueries({ queryKey: ['approvals', 'delegations'] }); }, onError: (e: Error) => toast.error(e.message) });
   const revoke = useMutation({ mutationFn: (id: string) => api.del(`/approvals/delegations/${id}`), onSuccess: () => void qc.invalidateQueries({ queryKey: ['approvals', 'delegations'] }) });
 
@@ -110,6 +119,7 @@ export function ApprovalsPage() {
               empty={{ title: 'Nothing awaiting your approval', description: 'Requests routed to your role or delegated to you will appear here.' }}
               columns={[
                 ...cols,
+                { key: 'match', header: 'Match check', cell: (r) => (r.match ? <span title={r.match.summary}><MatchBadge status={r.match.status} mode={r.match.mode} /></span> : <span className="text-muted">—</span>) },
                 { key: 'due', header: 'Due', cell: (r) => (r.overdue ? <Badge tone="danger">Overdue</Badge> : <span className="text-xs text-muted">{formatDateTime(r.dueAt)}</span>) },
                 {
                   key: 'actions',
@@ -133,6 +143,11 @@ export function ApprovalsPage() {
                 <div>
                   <p className="font-medium text-navy-800">{r.title}</p>
                   <p className="text-xs text-muted">{r.currentStepName} · {r.amount ? formatMoneyCompact(r.amount) : ''} {r.overdue ? '· overdue' : ''}</p>
+                  {r.match && (
+                    <div className="mt-1">
+                      <MatchBadge status={r.match.status} mode={r.match.mode} />
+                    </div>
+                  )}
                 </div>
               )}
             />
@@ -174,14 +189,20 @@ export function ApprovalsPage() {
         onOpenChange={(o) => !o && setDecide(null)}
         title={decide?.action === 'approve' ? 'Approve' : decide?.action === 'return' ? 'Return for correction' : 'Reject'}
         description={decide?.row.title}
-        footer={<Button variant={decide?.action === 'reject' ? 'danger' : decide?.action === 'approve' ? 'success' : 'primary'} loading={act.isPending} disabled={decide?.action !== 'approve' && !comment.trim()} onClick={() => act.mutate()}>Confirm</Button>}
+        footer={<Button variant={decide?.action === 'reject' ? 'danger' : decide?.action === 'approve' ? 'success' : 'primary'} loading={act.isPending} disabled={(decide?.action !== 'approve' && !comment.trim()) || !!approveHold || (decide?.action === 'approve' && decideMatch.isLoading)} onClick={() => act.mutate()}>Confirm</Button>}
       >
-        <Field label={decide?.action === 'approve' ? 'Comment (optional)' : 'Reason'} required={decide?.action !== 'approve'}>
+        {decide?.action === 'approve' && decideMatch.data?.match && (
+          <div className="mb-3">
+            <MatchCheckView m={decideMatch.data.match} compact />
+          </div>
+        )}
+        <Field label={decide?.action === 'approve' ? (decideMatch.data?.match?.approval.needsReason && decideMatch.data.match.mode === 'ENFORCE' ? 'Reason for the differences' : 'Comment (optional)') : 'Reason'} required={decide?.action !== 'approve' || (!!decideMatch.data?.match?.approval.needsReason && decideMatch.data.match.mode === 'ENFORCE')}>
           <Textarea value={comment} onChange={(e) => setComment(e.target.value)} autoFocus />
         </Field>
+        {approveHold && <p className="mt-2 text-xs text-amber-900">{approveHold}</p>}
         {decide?.row.link && (
           <Button variant="ghost" size="sm" className="mt-2" onClick={() => open(decide.row)}>
-            Open the document first
+            {decideMatch.data?.match?.approval.needsAttachment ? 'Open the document to attach the supporting document' : 'Open the document first'}
           </Button>
         )}
       </Dialog>

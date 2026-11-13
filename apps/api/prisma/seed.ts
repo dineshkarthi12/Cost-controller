@@ -356,7 +356,35 @@ async function main() {
     ['A-300', 'A-310', 'SS', 60], ['A-220', 'A-320', 'SS', 20], ['A-300', 'A-400', 'SS', 80], ['A-400', 'A-500', 'SS', 10],
     ['A-400', 'A-600', 'SS', 100], ['A-600', 'A-610', 'SS', 190], ['A-610', 'A-900', 'FS', 0], ['A-310', 'A-900', 'FS', 0],
   ] as const) await A.post(`${P}/schedule/dependencies`, { predecessorId: acts[pred].id, successorId: acts[succ].id, type, lagDays: lag });
-  console.log('✔ BOQ, activities, progress');
+  // Bill of materials linked to the BOQ and the material list. MR / PR / PO approvals are checked against it
+  // (purchase match check). Aggregate 20 mm is left out on purpose, and the conduit BOM rate is below the
+  // requisition rate, so the approval inbox shows one blocked and one "difference" example.
+  const bomDefs: Array<[string, string, string, string, string, string, string]> = [
+    // [refCode, title, BOQ item, material, qty, wastage, rate]
+    ['1.01', 'RCC M30 in columns, beams & slabs', 'B-301', 'RMC-M30', '9500', '0.02', '5200'],
+    ['1.02', 'Reinforcement Fe500D', 'B-302', 'STL-FE500', '1900', '0.03', '59000'],
+    ['1.03', 'Cement for concrete, masonry & plaster', 'B-401', 'CEM-OPC53', '44000', '0', '380'],
+    ['1.04', 'AAC block masonry 200 mm', 'B-401', 'BLK-AAC', '190000', '0.03', '68'],
+    ['1.05', 'Electrical conduits', 'B-501', 'ELE-CND25', '120000', '0.02', '35'],
+    ['1.06', 'Vitrified tile flooring', 'B-601', 'TIL-VT600', '42000', '0.05', '720'],
+  ];
+  for (const [i, [refCode, title, boqCode, mat, qty, wastage, rate]] of bomDefs.entries()) {
+    const totalQty = (Number(qty) * (1 + Number(wastage))).toFixed(4);
+    await prisma.bomItem.create({
+      data: {
+        projectId: RH.id,
+        lineNo: i + 1,
+        sheet: 'CIVIL-BOM',
+        refCode,
+        title,
+        boqRef: boqCode,
+        boqItemId: boq[boqCode].id,
+        createdById: users['arun.prakash'].id,
+        lines: { create: [{ lineNo: 1, kind: 'MATERIAL', description: mats[mat].name, qty, wastagePct: wastage, totalQty, unit: mats[mat].unit, rate, amount: (Number(totalQty) * Number(rate)).toFixed(2), materialId: mats[mat].id, rateSource: 'MANUAL' }] },
+      },
+    });
+  }
+  console.log('✔ BOQ, activities, progress, BOM');
 
   // ───────── Subcontracts ─────────
   const M = await as('meena.ramesh');

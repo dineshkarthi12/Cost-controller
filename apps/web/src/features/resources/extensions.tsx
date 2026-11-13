@@ -10,6 +10,7 @@ import { formatDate, formatDateTime, formatMoney, formatQty, todayIso } from '..
 import { Badge, Button, ConfirmDialog, DescriptionList, Dialog, Field, Input, StatusBadge, Textarea, LoadingBlock, cx } from '../../components/ui';
 import { RefSelect } from '../../components/forms/RefSelect';
 import type { ExtensionContext, Rec } from './ResourceViews';
+import { MatchCheckBanner } from '../../components/record/MatchCheck';
 
 export interface Extension {
   actions?: (ctx: ExtensionContext) => ReactNode;
@@ -927,10 +928,10 @@ function ChecklistPanel({ ctx }: { ctx: ExtensionContext }) {
 }
 
 export const EXTENSIONS: Record<string, Extension> = {
-  mrs: { actions: (ctx) => <MrActions ctx={ctx} /> },
+  mrs: { actions: (ctx) => <MrActions ctx={ctx} />, banner: (ctx) => <MatchCheckBanner docType="MR" entityId={String(ctx.record.id)} /> },
   activities: { panels: (ctx) => [{ value: 'deps', label: 'Dependencies', render: () => <DependenciesPanel ctx={ctx} /> }] },
   inspections: { panels: (ctx) => [{ value: 'checklist', label: 'Checklist', render: () => <ChecklistPanel ctx={ctx} /> }] },
-  prs: { actions: (ctx) => <PrActions ctx={ctx} />, panels: (ctx) => [{ value: 'budget', label: 'Budget check', render: () => <BudgetCheckPanel record={ctx.record} /> }] },
+  prs: { actions: (ctx) => <PrActions ctx={ctx} />, banner: (ctx) => <MatchCheckBanner docType="PR" entityId={String(ctx.record.id)} />, panels: (ctx) => [{ value: 'budget', label: 'Budget check', render: () => <BudgetCheckPanel record={ctx.record} /> }] },
   purchaseOrders: {
     actions: (ctx) => <PoActions ctx={ctx} />,
     panels: (ctx) => [
@@ -938,7 +939,12 @@ export const EXTENSIONS: Record<string, Extension> = {
       { value: 'budget', label: 'Budget check', render: () => <BudgetCheckPanel record={ctx.record} /> },
       { value: 'amendments', label: 'Amendments', render: () => <PoRevisions ctx={ctx} /> },
     ],
-    banner: (ctx) => (['DRAFT', 'SUBMITTED', 'RETURNED'].includes(String(ctx.record.status)) ? <Notice>A PO becomes a commitment only when approved. Issuing a PO is not cost.</Notice> : null),
+    banner: (ctx) => (
+      <>
+        {['DRAFT', 'SUBMITTED', 'RETURNED'].includes(String(ctx.record.status)) && <Notice>A PO becomes a commitment only when approved. Issuing a PO is not cost.</Notice>}
+        <MatchCheckBanner docType="PO" entityId={String(ctx.record.id)} />
+      </>
+    ),
   },
   supplierInvoices: {
     panels: (ctx) => [{ value: 'match', label: 'Three-way match', render: () => <InvoiceMatch record={ctx.record} /> }],

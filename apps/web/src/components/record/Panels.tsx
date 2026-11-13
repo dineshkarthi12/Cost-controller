@@ -8,6 +8,7 @@ import { useAuth, useProjectId } from '../../lib/auth';
 import { fileSize, formatDateTime, formatMoney, humanize, relativeTime } from '../../lib/format';
 import { Badge, Button, EmptyState, ErrorState, LoadingBlock, StatusBadge, Textarea, cx } from '../ui';
 import { RefSelect } from '../forms/RefSelect';
+import { approveBlockedReason, type MatchResult } from './MatchCheck';
 
 interface ApprovalAction {
   id: string;
@@ -46,7 +47,7 @@ export function ApprovalTimeline({ docType, entityId, onChanged }: { docType: st
   const { me } = useAuth();
   const hist = useQuery({ queryKey: ['p', 'approval-history', docType, entityId], queryFn: () => api.get<ApprovalHistory[]>('/approvals/history', { docType, entityId }) });
   const pending = hist.data?.find((h) => h.status === 'PENDING');
-  const detail = useQuery({ queryKey: ['p', 'approval', pending?.id], queryFn: () => api.get<{ canAct: boolean; submittedById: string; id: string }>(`/approvals/${pending!.id}`), enabled: !!pending });
+  const detail = useQuery({ queryKey: ['p', 'approval', pending?.id], queryFn: () => api.get<{ canAct: boolean; submittedById: string; id: string; match: MatchResult | null }>(`/approvals/${pending!.id}`), enabled: !!pending });
   const [comment, setComment] = useState('');
   const act = useMutation({
     mutationFn: ({ action }: { action: 'approve' | 'reject' | 'return' | 'withdraw' }) => api.post(`/approvals/${pending!.id}/${action}`, { comment: comment || undefined }),
@@ -59,6 +60,9 @@ export function ApprovalTimeline({ docType, entityId, onChanged }: { docType: st
     },
     onError: (e: Error) => toast.error(e.message),
   });
+  // Purchase match check (MR / PR / PO): what approving needs; the server enforces the same rule.
+  const approveHold = approveBlockedReason(detail.data?.match, comment);
+  const matchNeedsReason = !!detail.data?.match?.approval.needsReason && detail.data.match.mode === 'ENFORCE';
   if (hist.isLoading) return <LoadingBlock rows={2} />;
   if (hist.error) return <ErrorState error={hist.error} onRetry={() => hist.refetch()} />;
   if (!hist.data?.length) return <EmptyState title="Not submitted for approval yet" description="Submitting sends this document through the configured approval workflow." />;
@@ -80,9 +84,15 @@ export function ApprovalTimeline({ docType, entityId, onChanged }: { docType: st
           </ol>
           {detail.data?.canAct && (
             <div className="space-y-2">
-              <Textarea placeholder="Comment (required to return or reject)" value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Approval comment" />
+              <Textarea placeholder={matchNeedsReason ? 'Reason for the differences (required to approve), or why you return / reject' : 'Comment (required to return or reject)'} value={comment} onChange={(e) => setComment(e.target.value)} aria-label="Approval comment" />
+              {approveHold && (
+                <p className="flex items-start gap-1.5 text-xs text-amber-900">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  {approveHold}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
-                <Button variant="success" size="sm" loading={act.isPending && act.variables?.action === 'approve'} onClick={() => act.mutate({ action: 'approve' })}>
+                <Button variant="success" size="sm" disabled={!!approveHold} loading={act.isPending && act.variables?.action === 'approve'} onClick={() => act.mutate({ action: 'approve' })}>
                   Approve
                 </Button>
                 <Button variant="outline" size="sm" disabled={!comment.trim()} onClick={() => act.mutate({ action: 'return' })}>
@@ -225,6 +235,9 @@ export function AttachmentsPanel({ entityType, entityId, canUpload = true }: { e
     onSuccess: () => {
       toast.success('Attachment uploaded');
       void qc.invalidateQueries({ queryKey: ['p', 'attachments', entityType, entityId] });
+      // A supporting document can unlock an approval held by the purchase match check.
+      void qc.invalidateQueries({ queryKey: ['p', 'match-check'] });
+      void qc.invalidateQueries({ queryKey: ['p', 'approval'] });
     },
     onError: (e: Error) => toast.error(e.message),
   });
