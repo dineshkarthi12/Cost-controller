@@ -9,7 +9,6 @@
  * Demo passwords come from SEED_PASSWORD (default for local development only).
  */
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import request from 'supertest';
 import { prisma } from '../src/lib/prisma.js';
 import { hashPassword } from '../src/lib/crypto.js';
@@ -17,7 +16,6 @@ import { bootstrapOrganisation } from '../src/services/bootstrap.js';
 import { storageAvailable } from '../src/services/storage.js';
 import { createApp } from '../src/app.js';
 
-const here = path.dirname(fileURLToPath(import.meta.url));
 // The development default must never reach a production database.
 if ((process.env.NODE_ENV === 'production' || process.env.VERCEL === '1') && !process.env.SEED_PASSWORD) throw new Error('Set SEED_PASSWORD (min. 12 characters) to seed in production');
 // Trim: values pasted into hosting dashboards often carry a trailing space or newline.
@@ -145,6 +143,36 @@ async function seedRiversideBom(orgId: string, projectId: string) {
   return true;
 }
 
+/** Captions of the site photos older demo seeds generated (files site-01.jpg … site-10.jpg). */
+const GENERATED_PHOTO_CAPTIONS = [
+  'Tower A — Level 12 slab reinforcement', 'Block B — brickwork progress', 'M&E installation — riser shaft', 'Concrete pouring — raft pour 3', 'Terrace waterproofing trial',
+  'Rebar inspection before pour', 'Cement receipt — GRN', 'Scaffolding safety check', 'Excavation — basement', 'Morning muster — own labour',
+];
+
+/**
+ * Removes the generated demo site photos from demo projects: file name site-NN.jpg and one of the generated
+ * captions. Photos people uploaded (any other file name or caption) are kept.
+ */
+async function removeGeneratedDemoPhotos(orgId: string) {
+  const files = Array.from({ length: 10 }, (_, i) => `site-${String(i + 1).padStart(2, '0')}.jpg`);
+  const rows = await prisma.evidence.findMany({ where: { project: { orgId, isDemo: true }, caption: { in: GENERATED_PHOTO_CAPTIONS }, file: { originalName: { in: files } } }, select: { id: true, fileId: true, projectId: true, number: true } });
+  if (!rows.length) return 0;
+  const fileIds = [...new Set(rows.map((r) => r.fileId))];
+  await prisma.$transaction(async (tx) => {
+    await tx.evidence.deleteMany({ where: { id: { in: rows.map((r) => r.id) } } });
+    // A file record goes too unless something else still points at it.
+    for (const id of fileIds) {
+      const used = (await tx.evidence.count({ where: { fileId: id } })) + (await tx.attachment.count({ where: { fileId: id } })) + (await tx.quotation.count({ where: { fileId: id } })) + (await tx.documentRevision.count({ where: { fileId: id } }));
+      if (!used) await tx.fileObject.delete({ where: { id } });
+    }
+    for (const projectId of [...new Set(rows.map((r) => r.projectId))]) {
+      const mine = rows.filter((r) => r.projectId === projectId);
+      await tx.auditEvent.create({ data: { orgId, projectId, actorId: null, action: 'DEMO_PHOTOS_REMOVED', entityType: 'evidence', entityId: null, summary: `${mine.length} generated demo site photo(s) removed: ${mine.map((r) => r.number).join(', ')}` } });
+    }
+  });
+  return rows.length;
+}
+
 async function main() {
   const org = await bootstrapOrganisation(prisma, { code: 'TOPROCK', name: 'TOPROCK GLOBAL', isDemo: DEMO });
   const admin = await createUser(org.id, { key: 'admin', name: 'System Administrator', designation: 'Administrator', department: 'IT', roles: ['SUPER_ADMIN'], employeeId: 'TRG-0001' });
@@ -185,6 +213,8 @@ async function main() {
     // Demo databases seeded before the BOM existed: add it, so the purchase match check has something to check.
     const rh = await prisma.project.findFirst({ where: { orgId: org.id, code: 'RH', isDemo: true }, select: { id: true } });
     if (rh && !(await prisma.bomItem.count({ where: { projectId: rh.id } })) && (await seedRiversideBom(org.id, rh.id))) console.log('✔ Riverside Heights BOM added to the existing demo data');
+    const removed = await removeGeneratedDemoPhotos(org.id);
+    if (removed) console.log(`✔ ${removed} generated demo site photo(s) removed; uploaded photos kept`);
     console.log('Demo data already present — skipping. Run `npm run db:reset` to rebuild.');
     return;
   }
@@ -646,35 +676,7 @@ async function main() {
   });
   console.log('✔ Daily labour report');
 
-  // ───────── Site evidence (needs file storage) ─────────
-  if (storageAvailable) {
-    const photos = Array.from({ length: 10 }, (_, i) => path.join(here, 'demo-assets', `site-${String(i + 1).padStart(2, '0')}.jpg`));
-    const evid: any[] = [];
-    const evDefs: Array<[number, string, string, string, string]> = [
-      [0, 'WORK_COMPLETION', 'Tower A — Level 12 slab reinforcement', 'Tower A L12', 'karthik.s'],
-      [1, 'WORK_COMPLETION', 'Block B — brickwork progress', 'Tower B L3', 'suresh.babu'],
-      [2, 'EQUIPMENT', 'M&E installation — riser shaft', 'Tower A core', 'farhan.ali'],
-      [3, 'MEASUREMENT', 'Concrete pouring — raft pour 3', 'Raft', 'karthik.s'],
-      [4, 'WORK_COMPLETION', 'Terrace waterproofing trial', 'Tower A roof', 'karthik.s'],
-      [5, 'QUALITY', 'Rebar inspection before pour', 'Tower A L11', 'lakshmi.n'],
-      [6, 'MATERIAL_RECEIPT', 'Cement receipt — GRN', 'Main store', 'priya.natarajan'],
-      [7, 'SAFETY', 'Scaffolding safety check', 'Tower B façade', 'lakshmi.n'],
-      [8, 'WORK_COMPLETION', 'Excavation — basement', 'Basement', 'karthik.s'],
-      [9, 'MANPOWER', 'Morning muster — own labour', 'Gate 2', 'suresh.babu'],
-    ];
-    for (const [i, category, caption, location, user] of evDefs) {
-      const linked = category === 'MATERIAL_RECEIPT' ? { linkedType: 'grn', linkedId: cementGrn!.id } : category === 'MEASUREMENT' ? { linkedType: 'measurement', linkedId: (await prisma.measurement.findFirst({ where: { projectId: RH.id, location: 'Raft pour 3 & pedestals' } }))!.id } : {};
-      const fields: Record<string, string> = { category, caption, location, phase: i === 4 ? 'BEFORE' : 'NA', claimedTakenAt: new Date(Date.now() - (10 - i) * 86_400_000).toISOString(), ...(linked as Record<string, string>) };
-      if (i === 4) fields.pairKey = 'TERRACE-WP';
-      const r = await (await as(user)).upload(`${P}/evidence`, [photos[i]], fields);
-      evid.push(r[0]);
-    }
-    for (const [i, status, comment] of [[0, 'VERIFIED', ''], [1, 'CORRECTION_REQUIRED', 'Caption says Block B; photo shows Tower B — please correct the location'], [2, 'VERIFIED', ''], [3, 'VERIFIED', ''], [6, 'VERIFIED', ''], [8, 'VERIFIED', '']] as const) {
-      const reviewer = evDefs[i][4] === 'karthik.s' ? 'farhan.ali' : 'karthik.s';
-      await (await as(reviewer)).post(`${P}/evidence/${evid[i].id}/review`, { status, comment: comment || undefined });
-    }
-    console.log('✔ Site evidence');
-  } else console.log('… Site evidence skipped: no file storage configured');
+  // Site photos: none are generated. The demo shows the photos people upload themselves.
 
   // ───────── Variations, claims, risks, contracts ─────────
   const vo1 = await QS.post(`${P}/r/variations`, { title: 'Additional basement waterproofing (client instruction)', origin: 'CLIENT', reason: 'Higher water table found during excavation', scope: 'Crystalline waterproofing to basement retaining walls', instructionRef: 'CI-014', costCodeId: cc['02-200'].id, scheduleImpactDays: 7, clientApprovalRef: 'GD/RH/VO/014', lines: [{ boqItemId: boq['B-602'].id, description: 'Crystalline waterproofing to retaining walls', unit: 'SQM', qty: '4200', rate: '1150', costRate: '820' }] });
@@ -813,7 +815,7 @@ async function main() {
       for (const rev of ['A', 'B']) {
         const { renderPdf } = await import('../src/services/pdf.js');
         const buf = await renderPdf({ title: `${title} — rev ${rev}`, subtitle: 'DEMO DRAWING PLACEHOLDER', meta: [['Document', title], ['Revision', rev]], columns: [{ key: 'n', label: 'Note', width: 1 }], rows: [{ n: 'Placeholder document generated for demo data. Not a real drawing.' }] });
-        const tmp = path.join(here, 'demo-assets', `.tmp-${rev}.pdf`);
+        const tmp = path.join((await import('node:os')).tmpdir(), `toprock-seed-${process.pid}-${rev}.pdf`);
         const fs = await import('node:fs/promises');
         await fs.writeFile(tmp, buf);
         const agent = request.agent(app);
