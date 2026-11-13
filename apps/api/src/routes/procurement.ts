@@ -6,7 +6,8 @@ import { param, parseBody } from '../lib/http.js';
 import { businessRule, conflict, notFound, validationError } from '../lib/errors.js';
 import { isoDate, toDateOnly, today } from '../lib/dates.js';
 import { ctxOf } from '../middleware/auth.js';
-import { assertCan, assertProjectAccess } from '../services/access.js';
+import { accessibleProjectIds, assertCan, assertProjectAccess, can } from '../services/access.js';
+import { supplierRatings } from './supplierRatings.js';
 import { audit } from '../services/audit.js';
 import { nextNumber } from '../services/numbering.js';
 import { upsertRegister } from '../services/register.js';
@@ -104,6 +105,9 @@ procurementRouter.get('/rfqs/:id', async (req, res) => {
   if (!rfq) throw notFound('RFQ');
   const pr = await prisma.purchaseRequisition.findUniqueOrThrow({ where: { id: rfq.prId }, include: { lines: true } });
   const parties = new Map((await prisma.party.findMany({ where: { id: { in: [...rfq.supplierIds, ...rfq.quotations.map((q) => q.supplierId)] } }, select: { id: true, name: true } })).map((p) => [p.id, p.name]));
+  // Supplier rating beside each quotation, measured across the projects where the viewer sees procurement.
+  const ratingProjects = (await accessibleProjectIds(prisma, ctxOf(req))).filter((id) => can(ctxOf(req), 'procurement.view', id));
+  const ratings = await supplierRatings(ctxOf(req).orgId, ratingProjects, [...new Set(rfq.quotations.map((q) => q.supplierId))]);
   const mats = new Map((await prisma.material.findMany({ where: { id: { in: pr.lines.map((l) => l.materialId) } }, select: { id: true, name: true, code: true } })).map((m) => [m.id, m]));
   const valid = rfq.quotations.filter((q) => q.technicallyAccepted);
   const lowest = valid.length ? valid.reduce((a, b) => (D(a.total).lte(D(b.total)) ? a : b)) : null;
@@ -111,7 +115,7 @@ procurementRouter.get('/rfqs/:id', async (req, res) => {
     ...rfq,
     pr: { id: pr.id, number: pr.number, lines: pr.lines.map((l) => ({ ...l, materialName: mats.get(l.materialId)?.name, materialCode: mats.get(l.materialId)?.code })) },
     suppliers: rfq.supplierIds.map((id) => ({ id, name: parties.get(id) ?? id, quoted: rfq.quotations.some((q) => q.supplierId === id) })),
-    quotations: rfq.quotations.map((q) => ({ ...q, supplierName: parties.get(q.supplierId) ?? q.supplierId, isLowest: lowest?.id === q.id })),
+    quotations: rfq.quotations.map((q) => ({ ...q, supplierName: parties.get(q.supplierId) ?? q.supplierId, isLowest: lowest?.id === q.id, rating: ratings.find((r) => r.supplier.id === q.supplierId) ?? null })),
     lowestQuotationId: lowest?.id ?? null,
   });
 });

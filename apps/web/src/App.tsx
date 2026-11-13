@@ -23,6 +23,7 @@ import { DailyLabourPage, LabourSummaryPage } from './features/site/LabourReport
 import { ImportButton } from './features/admin/ImportDialog';
 import { MaterialPresetButton } from './features/materials/MaterialPresets';
 import { MaterialRatesPage } from './features/materials/MaterialRatesPage';
+import { SupplierRatingPage } from './features/materials/SupplierRatingPage';
 import { BoqSheet } from './features/commercial/BoqSheet';
 import { DailyPackPage } from './features/share/DailyPackPage';
 import { BomPage } from './features/commercial/BomPage';
@@ -65,6 +66,7 @@ const MODULE_TABS: Record<string, TabDef[]> = {
     T('Units', '/materials/units', 'uoms'),
     T('Stores', '/materials/stores', 'stores'),
     T('Suppliers & parties', '/materials/parties', 'parties', { listProps: { actions: <ImportButton kind="SUPPLIERS" /> } }),
+    T('Supplier rating', '/materials/supplier-rating', undefined, { element: <SupplierRatingPage /> }),
   ],
   mr: [T('Material requisitions', '/procurement/mr', 'mrs')],
   pr: [T('Purchase requisitions', '/procurement/pr', 'prs')],

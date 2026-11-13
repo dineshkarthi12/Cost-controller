@@ -13,6 +13,7 @@ import { RefSelect } from '../../components/forms/RefSelect';
 import { ResourceForm } from '../../components/forms/ResourceForm';
 import { Page, PageHeader } from '../../components/layout/AppShell';
 import type { Rec } from '../resources/ResourceViews';
+import { SupplierGrade, type SupplierRatingRow } from '../materials/SupplierRatingPage';
 
 interface RfqRow {
   id: string;
@@ -67,7 +68,7 @@ interface RfqDetail {
   lowestQuotationId: string | null;
   pr: { id: string; number: string; lines: Array<{ id: string; materialName: string; materialCode: string; qty: string; unit: string; estimatedRate: string }> };
   suppliers: Array<{ id: string; name: string; quoted: boolean }>;
-  quotations: Array<{ id: string; supplierId: string; supplierName: string; quoteRef: string | null; total: string; subtotal: string; taxAmount: string; deliveryDays: number | null; paymentTerms: string | null; validityDays: number | null; technicalScore: string | null; technicallyAccepted: boolean; isLowest: boolean; remarks: string | null; lines: Array<{ prLineId: string; rate: string; amount: string }> }>;
+  quotations: Array<{ id: string; supplierId: string; supplierName: string; quoteRef: string | null; total: string; subtotal: string; taxAmount: string; deliveryDays: number | null; paymentTerms: string | null; validityDays: number | null; technicalScore: string | null; technicallyAccepted: boolean; isLowest: boolean; rating: Pick<SupplierRatingRow, 'grade' | 'score'> | null; remarks: string | null; lines: Array<{ prLineId: string; rate: string; amount: string }> }>;
 }
 
 export function RfqDetailPage() {
@@ -117,6 +118,9 @@ export function RfqDetailPage() {
                 <th key={qt.id} className={cx('px-3 py-2 text-right', qt.isLowest && 'bg-emerald-50 text-emerald-800')}>
                   {qt.supplierName}
                   {qt.isLowest && <Badge tone="success" className="ml-1">Lowest</Badge>}
+                  <span className="mt-1 block font-normal" title="Supplier rating across your projects (Materials → Supplier rating)">
+                    <SupplierGrade rating={qt.rating} />
+                  </span>
                 </th>
               ))}
             </tr>

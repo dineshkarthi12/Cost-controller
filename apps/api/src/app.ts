@@ -17,6 +17,7 @@ import { projectsRouter } from './routes/projects.js';
 import { lookupsRouter } from './routes/lookups.js';
 import { resourceRouter } from './resources/router.js';
 import { approvalsRouter } from './routes/approvals.js';
+import { supplierRatingsRouter } from './routes/supplierRatings.js';
 import { budgetRouter } from './routes/budget.js';
 import { measurementsRouter } from './routes/measurements.js';
 import { procurementRouter } from './routes/procurement.js';
@@ -127,6 +128,7 @@ export function createApp() {
   api.use('/files', filesRouter);
   api.use('/my/tasks', myTasksRouter);
   api.use('/approvals', approvalsRouter);
+  api.use('/supplier-ratings', supplierRatingsRouter);
   api.use('/notifications', notificationsRouter);
   api.use('/admin', adminRouter);
   api.use('/imports', importsRouter);
